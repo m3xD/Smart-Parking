@@ -43,7 +43,8 @@ type BarrierRepository interface {
 	FindByLotID(ctx context.Context, lotID int) ([]domain.Barrier, error)
 	FindByThingAndBarrierIdentifier(ctx context.Context, esp32ThingName string, barrierIdentifier string) (*domain.Barrier, error)
 	UpdateState(ctx context.Context, id int, state domain.BarrierState, lastCommand string, lastCommandTime *time.Time, source string) error
-	FindByThingName(ctx context.Context, esp32ThingName string) ([]domain.Barrier, error) // << THÊM HÀM MỚI
+	FindByThingName(ctx context.Context, esp32ThingName string) ([]domain.Barrier, error)                    // << THÊM HÀM MỚI
+	FindByLotIDAndThingName(ctx context.Context, lotID int, esp32ThingName string) ([]domain.Barrier, error) // << THÊM HÀM MỚI VÀO INTERFACE
 	Update(ctx context.Context, barrier *domain.Barrier) (*domain.Barrier, error)
 	Delete(ctx context.Context, id int) error
 }

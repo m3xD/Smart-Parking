@@ -6,6 +6,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsgo_config "github.com/aws/aws-sdk-go-v2/config" // Alias để tránh trùng tên
 	"github.com/aws/aws-sdk-go-v2/service/iotdataplane"
+	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"smart_parking/internal/api/middleware"
 
@@ -60,16 +61,22 @@ func main() {
 	})
 	log.Println("Đã khởi tạo SQS client và IoT Data Plane client.")
 
+	rekognitionClient := rekognition.NewFromConfig(awsSDKCfg) // Khởi tạo Rekognition Client
+	lprService := service.NewLPRService(rekognitionClient)    // Khởi tạo LPRService
+
 	// 5. Initialize Repositories
 	userRepo := postgresql.NewPgUserRepository(db) // Thêm User Repo
 	parkingLotRepo := postgresql.NewPgParkingLotRepository(db)
 	parkingSlotRepo := postgresql.NewPgParkingSlotRepository(db)
 	barrierRepo := postgresql.NewPgBarrierRepository(db)
 	deviceEventsLogRepo := postgresql.NewPgDeviceEventsLogRepository(db)
+	sessionRepo := postgresql.NewPgParkingSessionRepository(db)
+	deviceRepo := postgresql.NewPgDeviceRepository(db)
 
 	// 6. Initialize Services
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpirationHours) // Thêm AuthService
-	parkingService := service.NewParkingService(parkingLotRepo, parkingSlotRepo, barrierRepo)
+	parkingService := service.NewParkingService(parkingLotRepo, parkingSlotRepo, barrierRepo,
+		sessionRepo, deviceRepo, deviceEventsLogRepo)
 	iotService := service.NewIoTService(parkingService, iotDataPlaneClient, cfg, deviceEventsLogRepo)
 
 	// 7. Initialize Auth Middleware
@@ -93,7 +100,7 @@ func main() {
 	}
 
 	// 9. Setup HTTP Router
-	router := api.SetupRouter(authService, parkingService, iotService, authMiddleware) // Truyền authService và authMiddleware
+	router := api.SetupRouter(authService, parkingService, iotService, authMiddleware, lprService) // Truyền authService và authMiddleware
 
 	// 10. Start HTTP Server
 	srv := &http.Server{

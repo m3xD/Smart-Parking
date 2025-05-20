@@ -630,3 +630,173 @@ func (s *ParkingService) GetAllDevices(ctx context.Context) ([]domain.Device, er
 func (s *ParkingService) GetDeviceByThingName(ctx context.Context, thingName string) (*domain.Device, error) {
 	return s.deviceRepo.FindByThingName(ctx, thingName)
 }
+
+// --- ParkingSession Logic ---
+func (s *ParkingService) VehicleCheckIn(ctx context.Context, dto domain.VehicleCheckInDTO) (*domain.ParkingSession, error) {
+	log.Printf("Service: Ghi nhận xe vào cổng (API): LotID=%d, ESP32='%s', Biển số='%s'",
+		dto.LotID, dto.Esp32ThingName, dto.VehicleIdentifier)
+
+	// 1. Xác thực LotID
+	lot, err := s.lotRepo.FindByID(ctx, dto.LotID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, fmt.Errorf("bãi đỗ xe với ID %d không tồn tại", dto.LotID)
+		}
+		return nil, fmt.Errorf("lỗi khi kiểm tra bãi đỗ xe: %w", err)
+	}
+
+	// 2. Kiểm tra xem có phiên active nào cho biển số này trong bãi này chưa
+	// (Điều này quan trọng để tránh check-in trùng lặp)
+	existingActiveSession, err := s.sessionRepo.FindActiveByVehicleIdentifier(ctx, dto.LotID, dto.VehicleIdentifier)
+	if err != nil && !errors.Is(err, repository.ErrNoActiveSession) && !errors.Is(err, repository.ErrNotFound) {
+		return nil, fmt.Errorf("lỗi kiểm tra phiên hoạt động: %w", err)
+	}
+	if existingActiveSession != nil {
+		log.Printf("Xe '%s' đã có phiên đang hoạt động (ID: %d) trong bãi %d.", dto.VehicleIdentifier, existingActiveSession.ID, dto.LotID)
+		return nil, fmt.Errorf("%w: xe '%s' đã ở trong bãi", repository.ErrDuplicateEntry, dto.VehicleIdentifier)
+	}
+
+	// 3. Xác định EntryTime
+	var entryTime time.Time
+	if dto.EntryTime != "" {
+		parsedTime, err := time.Parse(time.RFC3339Nano, dto.EntryTime)
+		if err != nil {
+			log.Printf("Lỗi parse entry time từ DTO: %v. Sử dụng thời gian hiện tại của server.", err)
+			entryTime = time.Now().UTC()
+		} else {
+			entryTime = parsedTime.UTC()
+		}
+	} else {
+		entryTime = time.Now().UTC()
+	}
+
+	// 4. Tùy chọn: Tìm một chỗ đỗ trống tự động
+	var sessionSlotID null.Int
+	// Chỉ tìm slot nếu lot này có cấu hình total_slots > 0 (nghĩa là quản lý slot cụ thể)
+	if lot.TotalSlots > 0 {
+		availableSlot, err := s.slotRepo.FindFirstAvailableByLotID(ctx, dto.LotID)
+		if err == nil && availableSlot != nil {
+			sessionSlotID = null.IntFrom(int64(availableSlot.ID))
+			// Cập nhật trạng thái slot này thành occupied
+			if errTime := s.slotRepo.UpdateStatus(ctx, availableSlot.ID, domain.StatusOccupied, &entryTime, "session_check_in"); errTime != nil {
+				log.Printf("Lỗi khi cập nhật trạng thái slot %d thành occupied: %v", availableSlot.ID, errTime)
+				// Quyết định: Có block việc tạo session không? Hay chỉ log?
+				// Hiện tại, vẫn cho tạo session nhưng slot có thể không được update.
+			} else {
+				log.Printf("Đã gán chỗ đỗ %s (ID: %d) cho phiên check-in mới.", availableSlot.SlotIdentifier, availableSlot.ID)
+			}
+		} else if err != nil && !errors.Is(err, repository.ErrNotFound) {
+			log.Printf("Lỗi khi tìm chỗ đỗ trống cho bãi %d: %v. Phiên sẽ không có slot_id cụ thể.", dto.LotID, err)
+		} else {
+			log.Printf("Không tìm thấy chỗ đỗ trống tự động cho bãi %d. Phiên sẽ không có slot_id cụ thể.", dto.LotID)
+		}
+	} else {
+		log.Printf("Bãi đỗ %d không quản lý chỗ đỗ cụ thể (total_slots=0). Phiên sẽ không có slot_id.", dto.LotID)
+	}
+
+	// 5. Tạo bản ghi ParkingSession mới
+	session := &domain.ParkingSession{
+		LotID:             dto.LotID,
+		SlotID:            sessionSlotID,
+		Esp32ThingName:    dto.Esp32ThingName,
+		VehicleIdentifier: null.StringFrom(dto.VehicleIdentifier),
+		EntryTime:         entryTime,
+		PaymentStatus:     "pending",
+		Status:            domain.SessionActive,
+		// EntryGateEventID: dto.EntryGateEventID, // Nếu frontend gửi
+	}
+
+	createdSession, err := s.sessionRepo.Create(ctx, session)
+	if err != nil {
+		return nil, fmt.Errorf("lỗi tạo phiên đỗ xe: %w", err)
+	}
+	log.Printf("Đã tạo phiên đỗ xe mới ID: %d cho xe '%s' tại bãi %d", createdSession.ID, dto.VehicleIdentifier, dto.LotID)
+	return createdSession, nil
+}
+
+func (s *ParkingService) VehicleCheckOut(ctx context.Context, dto domain.VehicleCheckOutDTO) (*domain.ParkingSession, error) {
+	log.Printf("Service: Ghi nhận xe ra cổng (API): LotID=%d, ESP32='%s', Biển số='%s'",
+		dto.LotID, dto.Esp32ThingName, dto.VehicleIdentifier)
+
+	// 1. Xác thực LotID
+	_, err := s.lotRepo.FindByID(ctx, dto.LotID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, fmt.Errorf("bãi đỗ xe với ID %d không tồn tại", dto.LotID)
+		}
+		return nil, fmt.Errorf("lỗi khi kiểm tra bãi đỗ xe: %w", err)
+	}
+
+	// 2. Tìm phiên đang active cho biển số này trong bãi này
+	activeSession, err := s.sessionRepo.FindActiveByVehicleIdentifier(ctx, dto.LotID, dto.VehicleIdentifier)
+	if err != nil {
+		if errors.Is(err, repository.ErrNoActiveSession) || errors.Is(err, repository.ErrNotFound) {
+			log.Printf("Không tìm thấy phiên đỗ xe đang hoạt động cho xe '%s' tại bãi %d.", dto.VehicleIdentifier, dto.LotID)
+			return nil, fmt.Errorf("%w: không có xe '%s' đang đỗ tại bãi này", repository.ErrNoActiveSession, dto.VehicleIdentifier)
+		}
+		return nil, fmt.Errorf("lỗi tìm phiên đỗ xe đang hoạt động: %w", err)
+	}
+
+	// 3. Xác định ExitTime
+	var exitTime time.Time
+	if dto.ExitTime != "" {
+		parsedTime, err := time.Parse(time.RFC3339Nano, dto.ExitTime)
+		if err != nil {
+			log.Printf("Lỗi parse exit time từ DTO: %v. Sử dụng thời gian hiện tại của server.", err)
+			exitTime = time.Now().UTC()
+		} else {
+			exitTime = parsedTime.UTC()
+		}
+	} else {
+		exitTime = time.Now().UTC()
+	}
+
+	// Đảm bảo exitTime không sớm hơn entryTime
+	if exitTime.Before(activeSession.EntryTime) {
+		log.Printf("Thời gian ra (%v) sớm hơn thời gian vào (%v) của phiên %d. Sử dụng thời gian vào làm thời gian ra.", exitTime, activeSession.EntryTime, activeSession.ID)
+		exitTime = activeSession.EntryTime
+	}
+
+	// 4. Cập nhật thông tin cho phiên
+	activeSession.ExitTime = null.TimeFrom(exitTime)
+	activeSession.Status = domain.SessionCompleted
+	// activeSession.ExitGateEventID = null.StringFrom(dto.ExitGateEventID) // Nếu frontend gửi
+
+	duration := exitTime.Sub(activeSession.EntryTime)
+	activeSession.DurationMinutes = null.IntFrom(int64(duration.Minutes()))
+
+	// 5. Tính toán phí (ví dụ đơn giản)
+	if activeSession.DurationMinutes.Valid {
+		fee := float64(activeSession.DurationMinutes.Int64) * 1000.0 // 1000 VND/phút
+		if fee < 5000.0 && activeSession.DurationMinutes.Int64 > 0 {
+			fee = 5000.0
+		} else if activeSession.DurationMinutes.Int64 <= 0 {
+			fee = 0
+		}
+		activeSession.CalculatedFee = null.FloatFrom(fee)
+	} else {
+		activeSession.CalculatedFee = null.FloatFrom(0)
+	}
+	// activeSession.PaymentStatus sẽ được cập nhật bởi một quy trình thanh toán riêng
+
+	// 6. Lưu cập nhật phiên
+	updatedSession, err := s.sessionRepo.Update(ctx, activeSession)
+	if err != nil {
+		return nil, fmt.Errorf("lỗi cập nhật phiên đỗ xe: %w", err)
+	}
+
+	// 7. Cập nhật trạng thái chỗ đỗ (nếu có) thành vacant
+	if activeSession.SlotID.Valid {
+		err = s.slotRepo.UpdateStatus(ctx, int(activeSession.SlotID.Int64), domain.StatusVacant, &exitTime, "session_check_out")
+		if err != nil {
+			log.Printf("Lỗi cập nhật trạng thái chỗ đỗ %d thành trống: %v", activeSession.SlotID.Int64, err)
+			// Không block việc kết thúc session nếu chỉ lỗi cập nhật slot status
+		} else {
+			log.Printf("Đã cập nhật chỗ đỗ ID %d thành trống.", activeSession.SlotID.Int64)
+		}
+	}
+
+	log.Printf("Đã kết thúc phiên đỗ xe ID: %d cho xe '%s'. Thời gian đỗ: %d phút. Phí (tạm tính): %.2f",
+		updatedSession.ID, dto.VehicleIdentifier, updatedSession.DurationMinutes.Int64, updatedSession.CalculatedFee.Float64)
+	return updatedSession, nil
+}

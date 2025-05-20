@@ -21,7 +21,7 @@ func NewParkingSlotHandler(ps *service.ParkingService) *ParkingSlotHandler {
 
 // POST /parking-lots/:lot_id/slots
 func (h *ParkingSlotHandler) CreateParkingSlot(c *gin.Context) {
-	lotIDStr := c.Param("lot_id")
+	lotIDStr := c.Param("id")
 	lotID, err := strconv.Atoi(lotIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Lot ID không hợp lệ"})
@@ -49,7 +49,7 @@ func (h *ParkingSlotHandler) CreateParkingSlot(c *gin.Context) {
 
 // GET /parking-lots/:lot_id/slots
 func (h *ParkingSlotHandler) GetSlotsByLotID(c *gin.Context) {
-	lotIDStr := c.Param("lot_id")
+	lotIDStr := c.Param("id")
 	lotID, err := strconv.Atoi(lotIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Lot ID không hợp lệ"})

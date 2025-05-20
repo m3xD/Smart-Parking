@@ -62,7 +62,7 @@ func (h *BarrierHandler) GetBarrierByID(c *gin.Context) {
 
 // GET /parking-lots/:lot_id/barriers
 func (h *BarrierHandler) GetBarriersByLotID(c *gin.Context) {
-	lotIDStr := c.Param("lot_id")
+	lotIDStr := c.Param("id")
 	lotID, err := strconv.Atoi(lotIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Lot ID không hợp lệ"})

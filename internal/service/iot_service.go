@@ -190,7 +190,7 @@ func (s *IoTService) HandleDeviceEvent(ctx context.Context, sqsMessageBody strin
 }
 
 func (s *IoTService) SendBarrierControlCommand(ctx context.Context, esp32ControllerID string, barrierType string, command string, requestID string) error {
-	topic := fmt.Sprintf("parking/barrier/%s/%s/command", esp32ControllerID, barrierType)
+	topic := fmt.Sprintf("smart_parking/command/barriers/%s", barrierType)
 
 	payload := domain.BarrierControlCommandPayload{
 		Command:   command,
@@ -214,7 +214,7 @@ func (s *IoTService) SendBarrierControlCommand(ctx context.Context, esp32Control
 	log.Printf("Đã gửi lệnh '%s' (ReqID: %s) thành công tới rào chắn %s của ESP32 %s", command, requestID, barrierType, esp32ControllerID)
 	// TODO: Cập nhật trạng thái lệnh là "sent" trong DB (ví dụ, trong bảng command_log)
 	// Cập nhật last_command_sent và last_command_timestamp cho barrier tương ứng
-	barrier, err := s.parkingService.barrierRepo.FindByThingAndBarrierIdentifier(ctx, esp32ControllerID, fmt.Sprintf("%s_barrier_1", barrierType)) // Giả sử barrier_identifier có dạng này
+	barrier, err := s.parkingService.barrierRepo.FindByThingAndBarrierIdentifier(ctx, esp32ControllerID, fmt.Sprintf("%s_%s", esp32ControllerID, barrierType)) // Giả sử barrier_identifier có dạng này
 	if err == nil && barrier != nil {
 		now := time.Now().UTC()
 		err := s.parkingService.barrierRepo.UpdateState(ctx, barrier.ID, barrier.CurrentState, command, &now, "server_command_sent")

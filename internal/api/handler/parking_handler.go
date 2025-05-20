@@ -19,6 +19,50 @@ func NewParkingSessionHandler(ps *service.ParkingService) *ParkingSessionHandler
 	return &ParkingSessionHandler{parkingService: ps}
 }
 
+// POST /parking-sessions/check-in
+func (h *ParkingSessionHandler) VehicleCheckIn(c *gin.Context) {
+	var dto domain.VehicleCheckInDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Dữ liệu không hợp lệ: " + err.Error()})
+		return
+	}
+
+	session, err := h.parkingService.VehicleCheckIn(c.Request.Context(), dto)
+	if err != nil {
+		if errors.Is(err, repository.ErrDuplicateEntry) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Không thể ghi nhận xe vào", "details": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, session)
+}
+
+// POST /parking-sessions/check-out
+func (h *ParkingSessionHandler) VehicleCheckOut(c *gin.Context) {
+	var dto domain.VehicleCheckOutDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Dữ liệu không hợp lệ: " + err.Error()})
+		return
+	}
+
+	session, err := h.parkingService.VehicleCheckOut(c.Request.Context(), dto)
+	if err != nil {
+		if errors.Is(err, repository.ErrNoActiveSession) || errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Không thể ghi nhận xe ra", "details": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, session)
+}
+
 // GET /parking-sessions/:id
 func (h *ParkingSessionHandler) GetParkingSessionByID(c *gin.Context) {
 	idStr := c.Param("id")
@@ -41,7 +85,7 @@ func (h *ParkingSessionHandler) GetParkingSessionByID(c *gin.Context) {
 
 // GET /parking-lots/:lot_id/active-sessions
 func (h *ParkingSessionHandler) GetActiveSessionsByLotID(c *gin.Context) {
-	lotIDStr := c.Param("lot_id")
+	lotIDStr := c.Param("id")
 	lotID, err := strconv.Atoi(lotIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Lot ID không hợp lệ"})

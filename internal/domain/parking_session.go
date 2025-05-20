@@ -54,3 +54,21 @@ type ParkingSessionFilterDTO struct {
 	Status *string `form:"status"`
 	// Thêm các trường filter khác nếu cần (ví dụ: ngày, vehicle_id)
 }
+
+// DTO cho API Check-in (frontend gửi lên)
+type VehicleCheckInDTO struct {
+	LotID             int    `json:"lot_id" binding:"required"`
+	Esp32ThingName    string `json:"esp32_thing_name" binding:"required"`
+	VehicleIdentifier string `json:"vehicle_identifier" binding:"required"`
+	EntryTime         string `json:"entry_time,omitempty"`
+	// EntryImageBase64  string `json:"entry_image_base64,omitempty"` // Bỏ qua nếu LPR đã xử lý ở frontend hoặc 1 API riêng
+}
+
+// DTO cho API Check-out (frontend gửi lên)
+type VehicleCheckOutDTO struct {
+	LotID             int    `json:"lot_id" binding:"required"`
+	Esp32ThingName    string `json:"esp32_thing_name" binding:"required"`
+	VehicleIdentifier string `json:"vehicle_identifier" binding:"required"`
+	ExitTime          string `json:"exit_time,omitempty"`
+	// ExitImageBase64   string `json:"exit_image_base64,omitempty"`
+}

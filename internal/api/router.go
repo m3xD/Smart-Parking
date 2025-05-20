@@ -13,7 +13,7 @@ import (
 	// "parking_system_go/internal/repository"
 )
 
-func SetupRouter(as *service.AuthService, ps *service.ParkingService, is *service.IoTService, authMw *middleware.AuthMiddleware) *gin.Engine {
+func SetupRouter(as *service.AuthService, ps *service.ParkingService, is *service.IoTService, authMw *middleware.AuthMiddleware, lprService *service.LPRService) *gin.Engine {
 	r := gin.Default()
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
@@ -50,17 +50,17 @@ func SetupRouter(as *service.AuthService, ps *service.ParkingService, is *servic
 			lotRoutes.DELETE("/:id", authMw.AuthorizeRole("admin"), lotH.DeleteParkingLot)
 
 			slotH_nested := handler.NewParkingSlotHandler(ps)
-			slotRoutesInLot := lotRoutes.Group("/:lot_id/slots")
+			slotRoutesInLot := lotRoutes.Group("/:id/slots")
 			{
 				slotRoutesInLot.POST("", authMw.AuthorizeRole("admin"), slotH_nested.CreateParkingSlot)
 				slotRoutesInLot.GET("", slotH_nested.GetSlotsByLotID)
 			}
 
 			barrierH_nested := handler.NewBarrierHandler(ps)
-			lotRoutes.GET("/:lot_id/barriers", barrierH_nested.GetBarriersByLotID)
+			lotRoutes.GET("/:id/barriers", barrierH_nested.GetBarriersByLotID)
 
-			sessionH_nested := handler.NewParkingSessionHandler(ps) // Sử dụng handler đã tạo
-			lotRoutes.GET("/:lot_id/active-sessions", sessionH_nested.GetActiveSessionsByLotID)
+			sessionH_nested := handler.NewParkingSessionHandler(ps)
+			lotRoutes.GET("/:id/active-sessions", sessionH_nested.GetActiveSessionsByLotID)
 		}
 
 		slotH := handler.NewParkingSlotHandler(ps)
@@ -83,7 +83,9 @@ func SetupRouter(as *service.AuthService, ps *service.ParkingService, is *servic
 		sessionH := handler.NewParkingSessionHandler(ps) // Sử dụng handler đã tạo
 		sessionRoutes := v1.Group("/parking-sessions")
 		{
-			sessionRoutes.GET("", sessionH.FindParkingSessions) // API filter sessions
+			sessionRoutes.POST("/check-in", sessionH.VehicleCheckIn)   // API check-in
+			sessionRoutes.POST("/check-out", sessionH.VehicleCheckOut) // API check-out
+			sessionRoutes.GET("", sessionH.FindParkingSessions)        // API filter sessions
 			sessionRoutes.GET("/:id", sessionH.GetParkingSessionByID)
 		}
 
@@ -102,6 +104,16 @@ func SetupRouter(as *service.AuthService, ps *service.ParkingService, is *servic
 			iotRoutes.Use(authMw.AuthorizeRole("admin", "operator"))
 			{
 				iotRoutes.POST("/barrier", iotCmdH.ControlBarrier)
+			}
+		}
+
+		if lprService != nil { // Kiểm tra nếu lprService được truyền vào
+			lprH := handler.NewLPRHandler(lprService, ps) // Truyền cả parkingService
+			lprRoutes := v1.Group("/lpr")
+			// Có thể cần quyền admin hoặc operator cho API này
+			lprRoutes.Use(authMw.AuthorizeRole("admin", "operator"))
+			{
+				lprRoutes.POST("/process-image", lprH.ProcessImage)
 			}
 		}
 	}
