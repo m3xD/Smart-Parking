@@ -1,0 +1,1894 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Quản Lý Bãi Đỗ Xe Thông Minh</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src='https://unpkg.com/tesseract.js@5/dist/tesseract.min.js'></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            margin: 0;
+            overflow-x: hidden;
+        }
+        #threejs-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+        }
+        .slot {
+            transition: all 0.3s ease-in-out;
+            transform-style: preserve-3d;
+        }
+        .slot:hover {
+            transform: scale(1.05);
+        }
+        .slot.occupied {
+            background-color: #ef4444;
+            color: white;
+        }
+        .slot.vacant {
+            background-color: #22c55e;
+            color: white;
+        }
+        .slot.maintenance {
+            background-color: #f59e0b;
+            color: white;
+        }
+        .slot.reserved {
+            background-color: #6366f1;
+            color: white;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            background-color: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            pointer-events: none;
+        }
+        .modal.active {
+            display: flex;
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            width: 90%;
+            max-width: 500px;
+            transform: scale(0.95);
+            transition: transform 0.3s ease-in-out;
+        }
+        .modal.active .modal-content {
+            transform: scale(1);
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        .btn {
+            padding-left: 1rem; padding-right: 1rem;
+            padding-top: 0.5rem; padding-bottom: 0.5rem;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            color: white;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-primary {
+            background-color: #3b82f6;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background-color: #2563eb;
+        }
+        .btn-secondary {
+            background-color: #6b7280;
+        }
+        .btn-secondary:hover:not(:disabled) {
+            background-color: #4b5563;
+        }
+        .btn-danger {
+            background-color: #ef4444;
+        }
+        .btn-danger:hover:not(:disabled) {
+            background-color: #dc2626;
+        }
+        .btn-success {
+            background-color: #22c55e;
+        }
+        .btn-success:hover:not(:disabled) {
+            background-color: #16a34a;
+        }
+        .admin-only {
+            /* Sẽ được kiểm soát bởi JS */
+        }
+        #app header, #app main, #app footer {
+            position: relative;
+            z-index: 10;
+        }
+        .table-responsive {
+            display: block;
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        #toast-container {
+            position: fixed;
+            top: 1.5rem;
+            right: 1.5rem;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .toast {
+            min-width: 250px;
+            max-width: 350px;
+            padding: 1rem;
+            border-radius: 0.375rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            color: white;
+            display: flex;
+            align-items: center;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        .toast-icon {
+            margin-right: 0.75rem;
+            font-size: 1.25rem;
+        }
+        .toast-success { background-color: #22c55e; }
+        .toast-error { background-color: #ef4444; }
+        .toast-info { background-color: #3b82f6; }
+        .toast-warning { background-color: #f59e0b; }
+
+        #loadingIndicator.flex .spinner, #ocrLoadingIndicator .spinner {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            display: inline-block;
+            border-top: 4px solid #FFF;
+            border-right: 4px solid transparent;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+        #ocrLoadingIndicator .spinner {
+            width: 24px;
+            height: 24px;
+            border-top: 3px solid #4f46e5;
+            border-right: 3px solid transparent;
+        }
+        #loadingIndicator.flex .spinner-text {
+            margin-top: 0.75rem;
+            color: white;
+        }
+
+        @keyframes rotation {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+        #capturedImagePreview, #webcamFeed, #exitCapturedImagePreview {
+            max-width: 100%;
+            max-height: 200px;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.375rem;
+            object-fit: contain;
+            background-color: #e5e7eb;
+        }
+        #webcamFeed {
+            transform: scaleX(-1);
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+<canvas id="threejs-canvas"></canvas>
+<div id="toast-container"></div>
+
+<div id="loginModal" class="modal">
+    <div class="modal-content">
+        <h2 class="text-2xl font-bold mb-6 text-center text-gray-700">Đăng Nhập Hệ Thống</h2>
+        <form id="loginForm">
+            <div class="mb-4">
+                <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Tên đăng nhập</label>
+                <input type="text" id="username" name="username" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="admin_user">
+            </div>
+            <div class="mb-6">
+                <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Mật khẩu</label>
+                <input type="password" id="password" name="password" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="••••••••">
+            </div>
+            <button type="submit" class="w-full btn btn-primary">
+                Đăng Nhập
+            </button>
+            <p id="loginError" class="text-red-500 text-xs mt-2 text-center"></p>
+        </form>
+    </div>
+</div>
+
+<div id="app" class="hidden min-h-screen">
+    <header class="bg-white shadow-md sticky top-0 z-40">
+        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-indigo-600">
+                <i class="fas fa-parking mr-2"></i>Quản Lý Bãi Đỗ Xe
+            </h1>
+            <div>
+                <span id="loggedInUser" class="text-sm text-gray-600 mr-4"></span>
+                <button id="logoutButton" class="btn btn-secondary text-sm">
+                    <i class="fas fa-sign-out-alt mr-1"></i>Đăng Xuất
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto p-4 md:p-6 bg-opacity-90 bg-gray-100 rounded-lg mt-4">
+        <section id="adminPanelSection" class="admin-only mb-6 bg-white p-6 rounded-lg shadow-lg" style="display: none;">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">Bảng Điều Khiển Quản Trị</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div>
+                    <h3 class="text-lg font-medium text-gray-600 mb-2">Quản Lý Bãi Đỗ Xe</h3>
+                    <button id="addParkingLotBtn" class="btn btn-success text-sm w-full mb-2"><i class="fas fa-plus-circle mr-2"></i>Thêm Bãi Đỗ Mới</button>
+                    <div id="parkingLotListAdmin" class="table-responsive max-h-72 overflow-y-auto border rounded-md">
+                        <p class="text-sm text-gray-500 p-3">Đang tải danh sách bãi đỗ...</p>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-lg font-medium text-gray-600 mb-2">Quản Lý Chỗ Đỗ</h3>
+                    <button id="adminAddParkingSlotBtn" class="btn btn-success text-sm w-full mb-2" disabled><i class="fas fa-plus-circle mr-2"></i>Thêm Chỗ Đỗ (Chọn bãi trước)</button>
+                    <div id="parkingSlotListAdmin" class="table-responsive max-h-72 overflow-y-auto border rounded-md">
+                        <p class="text-sm text-gray-500 p-3">Chọn một bãi đỗ để quản lý chỗ.</p>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-lg font-medium text-gray-600 mb-2">Quản Lý Rào Chắn</h3>
+                    <button id="adminAddBarrierBtn" class="btn btn-success text-sm w-full mb-2" disabled><i class="fas fa-plus-circle mr-2"></i>Thêm Rào Chắn (Chọn bãi trước)</button>
+                    <div id="barrierListAdmin" class="table-responsive max-h-72 overflow-y-auto border rounded-md">
+                        <p class="text-sm text-gray-500 p-3">Chọn một bãi đỗ để quản lý rào chắn.</p>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-lg font-medium text-gray-600 mb-2">Quản Lý Người Dùng</h3>
+                    <button id="manageUsersBtn" class="btn btn-primary text-sm w-full mb-2" onclick="showToast('Chức năng quản lý người dùng sẽ được phát triển sau.', 'info')"><i class="fas fa-users-cog mr-2"></i>Quản lý người dùng</button>
+                </div>
+            </div>
+        </section>
+
+        <section id="vehicleEntrySection" class="mb-6 bg-white p-6 rounded-lg shadow-lg">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Ghi Nhận Xe Vào Cổng</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                <div>
+                    <div class="mb-4">
+                        <label for="entryLotSelector" class="block text-sm font-medium text-gray-700 mb-1">Chọn bãi đỗ xe vào:</label>
+                        <select id="entryLotSelector" class="block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                            <option value="">-- Chọn bãi đỗ --</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Nguồn ảnh biển số:</label>
+                        <div class="flex items-center space-x-4">
+                            <button id="startWebcamBtn" class="btn btn-primary text-sm"><i class="fas fa-video mr-2"></i>Mở Webcam</button>
+                            <label for="imageUploadLPR" class="btn btn-secondary text-sm cursor-pointer">
+                                <i class="fas fa-upload mr-2"></i>Tải Ảnh Lên
+                                <input type="file" id="imageUploadLPR" accept="image/*" class="hidden"/>
+                            </label>
+                        </div>
+                    </div>
+                    <div id="webcamContainer" class="mb-4 hidden">
+                        <video id="webcamFeed" autoplay playsinline class="w-full rounded-md"></video>
+                        <button id="captureWebcamBtn" class="btn bg-indigo-600 hover:bg-indigo-700 text-white text-sm w-full mt-2"><i class="fas fa-camera-retro mr-2"></i>Chụp ảnh từ Webcam</button>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="licensePlateInput" class="block text-sm font-medium text-gray-700 mb-1">Biển số xe (Kết quả OCR hoặc nhập tay):</label>
+                        <div class="flex items-center">
+                            <input type="text" id="licensePlateInput" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-l-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="Ví dụ: 29A-12345">
+                            <button id="ocrProcessButton" class="mt-1 px-3 py-2 bg-indigo-500 text-white rounded-r-md hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-0" title="Nhận dạng từ ảnh xem trước (nếu có)">
+                                <i class="fas fa-sync-alt"></i> OCR
+                            </button>
+                        </div>
+                        <div id="ocrLoadingIndicator" class="mt-1 hidden items-center">
+                            <div class="spinner"></div>
+                            <span class="ml-2 text-sm text-gray-600">Đang nhận dạng biển số...</span>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label for="entryEsp32Selector" class="block text-sm font-medium text-gray-700 mb-1">Thiết bị ESP32 ghi nhận (Cổng vào):</label>
+                        <select id="entryEsp32Selector" class="block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                            <option value="">-- Chọn thiết bị --</option>
+                        </select>
+                    </div>
+                    <button id="simulateLprBtn" class="btn btn-primary text-sm mr-2"><i class="fas fa-random mr-2"></i>Mô Phỏng Biển Số</button>
+                    <button id="confirmVehicleEntryBtn" class="btn btn-success text-sm"><i class="fas fa-check-circle mr-2"></i>Xác Nhận Xe Vào</button>
+                </div>
+                <div class="text-center">
+                    <p class="text-sm font-medium text-gray-700 mb-2">Ảnh chụp (Xem trước):</p>
+                    <img id="capturedImagePreview" src="https://placehold.co/300x150/e2e8f0/94a3b8?text=Chua+Co+Anh" alt="Ảnh chụp biển số xe" class="mx-auto">
+                    <canvas id="captureCanvas" class="hidden"></canvas>
+                    <p class="mt-2 text-sm">Biển số OCR: <span id="recognizedPlateSpan" class="font-semibold text-indigo-600">Chưa có</span></p>
+                </div>
+            </div>
+        </section>
+
+        <section id="vehicleExitSection" class="mb-6 bg-white p-6 rounded-lg shadow-lg">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Ghi Nhận Xe Ra Cổng</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                <div>
+                    <div class="mb-4">
+                        <label for="exitLotSelector" class="block text-sm font-medium text-gray-700 mb-1">Chọn bãi đỗ xe ra:</label>
+                        <select id="exitLotSelector" class="block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                            <option value="">-- Chọn bãi đỗ --</option>
+                        </select>
+                    </div>
+                    <div class="mb-4">
+                        <label for="exitLicensePlateInput" class="block text-sm font-medium text-gray-700 mb-1">Biển số xe cần Check-out:</label>
+                        <input type="text" id="exitLicensePlateInput" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="Nhập biển số xe đã vào">
+                    </div>
+                    <div class="mb-4">
+                        <label for="exitEsp32Selector" class="block text-sm font-medium text-gray-700 mb-1">Thiết bị ESP32 ghi nhận (Cổng ra):</label>
+                        <select id="exitEsp32Selector" class="block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                            <option value="">-- Chọn thiết bị --</option>
+                        </select>
+                    </div>
+                    <button id="confirmVehicleExitBtn" class="btn btn-danger text-sm"><i class="fas fa-sign-out-alt mr-2"></i>Xác Nhận Xe Ra</button>
+                </div>
+                <div class="text-center">
+                    <p class="text-sm font-medium text-gray-700 mb-2">Ảnh chụp xe ra (Mô phỏng):</p>
+                    <img id="exitCapturedImagePreview" src="https://placehold.co/300x150/e2e8f0/94a3b8?text=Anh+Xe+Ra" alt="Ảnh chụp xe ra" class="mx-auto">
+                </div>
+            </div>
+        </section>
+
+
+        <section class="mb-6 bg-white p-6 rounded-lg shadow-lg">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Tổng Quan Bãi Đỗ Xe (Đang chọn)</h2>
+            <div class="flex flex-col md:flex-row md:items-center gap-4">
+                <select id="parkingLotSelector" class="block w-full md:w-1/2 px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                    <option value="">-- Chọn một bãi đỗ --</option>
+                </select>
+                <button id="refreshDataButton" class="btn btn-primary text-sm whitespace-nowrap">
+                    <i class="fas fa-sync-alt mr-2"></i>Làm Mới Dữ Liệu
+                </button>
+            </div>
+            <div id="parkingLotOverview" class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            </div>
+        </section>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <section class="lg:col-span-2 bg-white p-6 rounded-lg shadow-lg">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-700">Sơ Đồ Chỗ Đỗ Xe</h2>
+                    <button id="addSlotInlineBtn" class="btn btn-success text-sm admin-only" style="display: none;" disabled><i class="fas fa-plus-circle mr-2"></i>Thêm Chỗ</button>
+                </div>
+                <div id="slotGrid" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                    <p class="text-gray-500 col-span-full">Vui lòng chọn một bãi đỗ xe để xem chi tiết.</p>
+                </div>
+                <div class="mt-4 flex flex-wrap gap-2 text-xs">
+                    <span class="flex items-center"><div class="w-3 h-3 rounded-full bg-green-500 mr-1"></div>Trống</span>
+                    <span class="flex items-center"><div class="w-3 h-3 rounded-full bg-red-500 mr-1"></div>Có xe</span>
+                    <span class="flex items-center"><div class="w-3 h-3 rounded-full bg-yellow-500 mr-1"></div>Bảo trì</span>
+                    <span class="flex items-center"><div class="w-3 h-3 rounded-full bg-indigo-500 mr-1"></div>Đã đặt</span>
+                </div>
+            </section>
+
+            <section class="bg-white p-6 rounded-lg shadow-lg">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">Điều Khiển Rào Chắn</h2>
+                <div id="barrierControls" class="space-y-4">
+                    <p class="text-gray-500">Vui lòng chọn một bãi đỗ xe.</p>
+                </div>
+            </section>
+        </div>
+
+        <section class="mt-6 bg-white p-6 rounded-lg shadow-lg">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Phiên Đỗ Xe Đang Hoạt Động</h2>
+            <div id="activeSessionsTableContainer" class="table-responsive">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID Phiên</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Biển số</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Chỗ Đỗ</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thiết bị ESP32</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thời Gian Vào</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thời Gian Đỗ</th>
+                    </tr>
+                    </thead>
+                    <tbody id="activeSessionsTableBody" class="bg-white divide-y divide-gray-200">
+                    <tr><td colspan="6" class="px-4 py-4 text-sm text-gray-500 text-center">Không có phiên nào đang hoạt động hoặc chưa chọn bãi đỗ.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="mt-6 bg-white p-6 rounded-lg shadow-lg">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Giám Sát Thiết Bị ESP32</h2>
+            <div id="deviceMonitoringTableContainer" class="table-responsive">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thing Name</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bãi Đỗ ID</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trạng Thái</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Firmware</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lần cuối thấy</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP</th>
+                    </tr>
+                    </thead>
+                    <tbody id="deviceMonitoringTableBody" class="bg-white divide-y divide-gray-200">
+                    <tr><td colspan="6" class="px-4 py-4 text-sm text-gray-500 text-center">Không có dữ liệu thiết bị.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer class="bg-gray-800 text-white text-center p-4 mt-8">
+        <p>&copy; 2025 Hệ Thống Quản Lý Bãi Đỗ Xe Thông Minh.</p>
+    </footer>
+</div>
+
+<div id="parkingLotModal" class="modal">
+    <div class="modal-content">
+        <h3 id="parkingLotModalTitle" class="text-lg font-medium leading-6 text-gray-900 mb-4">Thêm Bãi Đỗ Xe Mới</h3>
+        <form id="parkingLotForm">
+            <input type="hidden" id="parkingLotId">
+            <div class="mb-4">
+                <label for="parkingLotName" class="block text-sm font-medium text-gray-700">Tên bãi đỗ</label>
+                <input type="text" id="parkingLotName" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+            </div>
+            <div class="mb-4">
+                <label for="parkingLotAddress" class="block text-sm font-medium text-gray-700">Địa chỉ</label>
+                <input type="text" id="parkingLotAddress" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+            </div>
+            <div class="mb-4">
+                <label for="parkingLotTotalSlots" class="block text-sm font-medium text-gray-700">Tổng số chỗ (0 nếu không giới hạn)</label>
+                <input type="number" id="parkingLotTotalSlots" value="0" min="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+            </div>
+            <div class="mt-6 flex justify-end space-x-3">
+                <button type="button" id="cancelParkingLotModal" class="btn btn-secondary">Hủy</button>
+                <button type="submit" class="btn btn-primary">Lưu</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="parkingSlotModal" class="modal">
+    <div class="modal-content">
+        <h3 id="parkingSlotModalTitle" class="text-lg font-medium leading-6 text-gray-900 mb-4">Thêm Chỗ Đỗ Xe Mới</h3>
+        <form id="parkingSlotForm">
+            <input type="hidden" id="parkingSlotId">
+            <input type="hidden" id="parkingSlotLotId">
+            <div class="mb-4">
+                <label for="slotIdentifier" class="block text-sm font-medium text-gray-700">Mã chỗ đỗ (ví dụ: S1, A05)</label>
+                <input type="text" id="slotIdentifier" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+            </div>
+            <div class="mb-4">
+                <label for="slotEsp32ThingName" class="block text-sm font-medium text-gray-700">Thing Name ESP32 (nếu có)</label>
+                <select id="slotEsp32ThingName" class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                    <option value="">-- Không gán thiết bị --</option>
+                </select>
+            </div>
+            <div class="mb-4">
+                <label for="slotStatus" class="block text-sm font-medium text-gray-700">Trạng thái ban đầu</label>
+                <select id="slotStatus" class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                    <option value="vacant">Trống (Vacant)</option>
+                    <option value="occupied">Có xe (Occupied)</option>
+                    <option value="maintenance">Bảo trì (Maintenance)</option>
+                    <option value="reserved">Đã đặt (Reserved)</option>
+                </select>
+            </div>
+            <div class="mt-6 flex justify-end space-x-3">
+                <button type="button" id="cancelParkingSlotModal" class="btn btn-secondary">Hủy</button>
+                <button type="submit" class="btn btn-primary">Lưu</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="barrierModal" class="modal">
+    <div class="modal-content">
+        <h3 id="barrierModalTitle" class="text-lg font-medium leading-6 text-gray-900 mb-4">Thêm Rào Chắn Mới</h3>
+        <form id="barrierForm">
+            <input type="hidden" id="barrierId">
+            <input type="hidden" id="barrierLotId">
+            <div class="mb-4">
+                <label for="barrierIdentifier" class="block text-sm font-medium text-gray-700">Mã rào chắn (ví dụ: entry_1, exit_A)</label>
+                <input type="text" id="barrierIdentifier" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+            </div>
+            <div class="mb-4">
+                <label for="barrierEsp32ThingName" class="block text-sm font-medium text-gray-700">Thing Name ESP32 điều khiển</label>
+                <select id="barrierEsp32ThingName" required class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                    <option value="">-- Chọn thiết bị --</option>
+                </select>
+            </div>
+            <div class="mb-4">
+                <label for="barrierType" class="block text-sm font-medium text-gray-700">Loại rào chắn</label>
+                <select id="barrierType" required class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                    <option value="entry">Rào vào (Entry)</option>
+                    <option value="exit">Rào ra (Exit)</option>
+                </select>
+            </div>
+            <div class="mt-6 flex justify-end space-x-3">
+                <button type="button" id="cancelBarrierModal" class="btn btn-secondary">Hủy</button>
+                <button type="submit" class="btn btn-primary">Lưu</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="loadingIndicator" class="fixed inset-0 bg-gray-800 bg-opacity-75 overflow-y-auto h-full w-full items-center justify-center z-[60] hidden">
+    <div class="flex flex-col items-center justify-center">
+        <div class="spinner"></div>
+        <p class="spinner-text">Đang tải dữ liệu...</p>
+    </div>
+</div>
+
+<script>
+    // --- THREE.JS BACKGROUND SETUP ---
+    let scene, camera, renderer, cubes;
+    const threeJsCanvas = document.getElementById('threejs-canvas');
+
+    function initThreeJS() {
+        console.log("initThreeJS called");
+        try {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 5;
+            renderer = new THREE.WebGLRenderer({ canvas: threeJsCanvas, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000000, 0);
+
+            cubes = [];
+            const geometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+            const colors = [0x3b82f6, 0x22c55e, 0xef4444, 0xf59e0b, 0x6366f1, 0x8b5cf6];
+
+            for (let i = 0; i < 50; i++) {
+                const material = new THREE.MeshStandardMaterial({
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    roughness: 0.5,
+                    metalness: 0.3
+                });
+                const cube = new THREE.Mesh(geometry, material);
+                cube.position.x = (Math.random() - 0.5) * 10;
+                cube.position.y = (Math.random() - 0.5) * 10;
+                cube.position.z = (Math.random() - 0.5) * 10;
+                cube.rotation.x = Math.random() * 2 * Math.PI;
+                cube.rotation.y = Math.random() * 2 * Math.PI;
+                cube.userData.rotationSpeedX = (Math.random() - 0.5) * 0.01;
+                cube.userData.rotationSpeedY = (Math.random() - 0.5) * 0.01;
+                scene.add(cube);
+                cubes.push(cube);
+            }
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
+            window.addEventListener('resize', onWindowResize, false);
+            animateThreeJS();
+            console.log("initThreeJS completed successfully");
+        } catch (error) {
+            console.error("Error in initThreeJS:", error);
+        }
+    }
+
+    function onWindowResize() {
+        if (camera && renderer) {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    }
+    function animateThreeJS() {
+        if (renderer && scene && camera && cubes) {
+            requestAnimationFrame(animateThreeJS);
+            cubes.forEach(cube => {
+                cube.rotation.x += cube.userData.rotationSpeedX;
+                cube.rotation.y += cube.userData.rotationSpeedY;
+            });
+            renderer.render(scene, camera);
+        }
+    }
+
+    // --- TOAST NOTIFICATION ---
+    const toastContainer = document.getElementById('toast-container');
+    function showToast(message, type = 'info', duration = 3000) {
+        const toast = document.createElement('div');
+        toast.classList.add('toast', `toast-${type}`);
+        let iconClass = 'fas fa-info-circle';
+        if (type === 'success') iconClass = 'fas fa-check-circle';
+        else if (type === 'error') iconClass = 'fas fa-times-circle';
+        else if (type === 'warning') iconClass = 'fas fa-exclamation-triangle';
+        toast.innerHTML = `<i class="${iconClass} toast-icon"></i><span>${message}</span>`;
+        toastContainer.appendChild(toast);
+        toast.offsetHeight;
+        toast.classList.add('show');
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => { toast.remove(); }, 300);
+        }, duration);
+    }
+
+    // --- GLOBAL VARIABLES & DOM ELEMENTS ---
+    const API_BASE_URL = 'http://13.215.202.115:8080';
+    let authToken = localStorage.getItem('authToken');
+    let currentUserRole = localStorage.getItem('role');
+    let currentLotId = null;
+    let currentSlotsData = [];
+    let currentBarriersData = [];
+    let allParkingLotsData = [];
+    let allDevicesData = [];
+    let webcamStream = null;
+
+    const loginModal = document.getElementById('loginModal');
+    const appDiv = document.getElementById('app');
+    const loginForm = document.getElementById('loginForm');
+    const loginError = document.getElementById('loginError');
+    const loggedInUserSpan = document.getElementById('loggedInUser');
+    const logoutButton = document.getElementById('logoutButton');
+
+    const adminPanelSection = document.getElementById('adminPanelSection');
+    const addParkingLotBtn = document.getElementById('addParkingLotBtn');
+    const parkingLotListAdmin = document.getElementById('parkingLotListAdmin');
+    const parkingLotModalEl = document.getElementById('parkingLotModal');
+    const parkingLotModalTitle = document.getElementById('parkingLotModalTitle');
+    const parkingLotForm = document.getElementById('parkingLotForm');
+    const cancelParkingLotModal = document.getElementById('cancelParkingLotModal');
+
+    const adminAddParkingSlotBtn = document.getElementById('adminAddParkingSlotBtn');
+    const parkingSlotListAdmin = document.getElementById('parkingSlotListAdmin');
+    const parkingSlotModalEl = document.getElementById('parkingSlotModal');
+    const parkingSlotModalTitle = document.getElementById('parkingSlotModalTitle');
+    const parkingSlotForm = document.getElementById('parkingSlotForm');
+    const cancelParkingSlotModal = document.getElementById('cancelParkingSlotModal');
+    const slotEsp32ThingNameSelector = document.getElementById('slotEsp32ThingName');
+
+
+    const adminAddBarrierBtn = document.getElementById('adminAddBarrierBtn');
+    const barrierListAdmin = document.getElementById('barrierListAdmin');
+    const barrierModalEl = document.getElementById('barrierModal');
+    const barrierModalTitle = document.getElementById('barrierModalTitle');
+    const barrierForm = document.getElementById('barrierForm');
+    const cancelBarrierModal = document.getElementById('cancelBarrierModal');
+    const barrierEsp32ThingNameSelector = document.getElementById('barrierEsp32ThingName');
+
+    const parkingLotSelector = document.getElementById('parkingLotSelector');
+    const slotGrid = document.getElementById('slotGrid');
+    const barrierControls = document.getElementById('barrierControls');
+    const parkingLotOverview = document.getElementById('parkingLotOverview');
+    const activeSessionsTableBody = document.getElementById('activeSessionsTableBody');
+    const deviceMonitoringTableBody = document.getElementById('deviceMonitoringTableBody');
+    const refreshDataButton = document.getElementById('refreshDataButton');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const addSlotInlineBtn = document.getElementById('addSlotInlineBtn');
+
+    // Webcam elements
+    const startWebcamBtn = document.getElementById('startWebcamBtn');
+    const webcamContainer = document.getElementById('webcamContainer');
+    const webcamFeed = document.getElementById('webcamFeed');
+    const captureWebcamBtn = document.getElementById('captureWebcamBtn');
+    const captureCanvas = document.getElementById('captureCanvas');
+
+    const imageUploadLPRElement = document.getElementById('imageUploadLPR');
+    const ocrProcessButton = document.getElementById('ocrProcessButton');
+    const ocrLoadingIndicator = document.getElementById('ocrLoadingIndicator');
+    const entryLotSelector = document.getElementById('entryLotSelector');
+    const licensePlateInput = document.getElementById('licensePlateInput');
+    const entryEsp32Selector = document.getElementById('entryEsp32Selector');
+    const simulateLprBtn = document.getElementById('simulateLprBtn');
+    const confirmVehicleEntryBtn = document.getElementById('confirmVehicleEntryBtn');
+    const capturedImagePreview = document.getElementById('capturedImagePreview');
+    const recognizedPlateSpan = document.getElementById('recognizedPlateSpan');
+
+    // Elements for Vehicle Exit
+    const exitLotSelector = document.getElementById('exitLotSelector');
+    const exitLicensePlateInput = document.getElementById('exitLicensePlateInput');
+    const exitEsp32Selector = document.getElementById('exitEsp32Selector');
+    const confirmVehicleExitBtn = document.getElementById('confirmVehicleExitBtn');
+    const exitCapturedImagePreview = document.getElementById('exitCapturedImagePreview');
+
+
+    function showLoading() {
+        loadingIndicator.classList.remove('hidden');
+        loadingIndicator.classList.add('flex');
+    }
+
+    function hideLoading() {
+        loadingIndicator.classList.add('hidden');
+        loadingIndicator.classList.remove('flex');
+    }
+
+    async function apiRequest(endpoint, method = 'GET', body = null, requiresAuth = true) {
+        showLoading();
+        const headers = { 'Content-Type': 'application/json' };
+        if (requiresAuth && authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
+
+        const config = {
+            method: method,
+            headers: headers,
+        };
+
+        if (body) {
+            config.body = JSON.stringify(body);
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+            if (response.status === 401) {
+                logout();
+                hideLoading();
+                showToast('Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.', 'error');
+                return null;
+            }
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: `Lỗi HTTP: ${response.status}` }));
+                console.error(`Lỗi API ${method} ${endpoint}:`, errorData);
+                showToast(`Lỗi: ${errorData.error || errorData.details || `Không thể thực hiện yêu cầu đến ${endpoint}`}`, 'error');
+                hideLoading();
+                return null;
+            }
+            if (response.status === 204) {
+                hideLoading();
+                return { success: true };
+            }
+            const data = await response.json();
+            hideLoading();
+            return data;
+        } catch (error) {
+            console.error(`Lỗi mạng hoặc lỗi khi gọi API ${method} ${endpoint}:`, error);
+            showToast(`Lỗi mạng hoặc lỗi khi gọi API. Vui lòng kiểm tra console.`, 'error');
+            hideLoading();
+            return null;
+        }
+    }
+
+    function checkLoginState() {
+        console.log("checkLoginState: Function called");
+        authToken = localStorage.getItem('authToken');
+        const username = localStorage.getItem('username');
+        currentUserRole = localStorage.getItem('role');
+        console.log("checkLoginState: authToken:", authToken, "username:", username, "role:", currentUserRole);
+
+        const adminElements = document.querySelectorAll('.admin-only');
+
+        if (authToken && username) {
+            console.log("checkLoginState: User is logged in.");
+            loginModal.style.display = 'none';
+            loginModal.classList.remove('active');
+            appDiv.style.display = 'block';
+            appDiv.classList.remove('hidden');
+            threeJsCanvas.style.zIndex = "-1";
+            document.body.style.backgroundColor = '#f3f4f6';
+            loggedInUserSpan.textContent = `Chào, ${username} (${currentUserRole || 'user'})!`;
+
+            if (currentUserRole === 'admin') {
+                console.log("checkLoginState: User is admin. Showing admin elements.");
+                adminPanelSection.style.display = 'block';
+                adminElements.forEach(el => el.style.display = el.tagName === 'BUTTON' || el.id === 'adminPanelSection' || el.closest('#adminPanelSection') ? 'block' : 'inline-block');
+            } else {
+                console.log("checkLoginState: User is not admin. Hiding admin elements.");
+                adminPanelSection.style.display = 'none';
+                adminElements.forEach(el => el.style.display = 'none');
+            }
+
+            adminAddParkingSlotBtn.disabled = currentUserRole !== 'admin' || !currentLotId;
+            adminAddBarrierBtn.disabled = currentUserRole !== 'admin' || !currentLotId;
+            addSlotInlineBtn.style.display = (currentUserRole === 'admin' && currentLotId) ? 'inline-flex' : 'none';
+            addSlotInlineBtn.disabled = !currentLotId;
+
+
+            fetchParkingLots().then(() => {
+                populateEntryLotSelector();
+                populateExitLotSelector(); // Populate exit lot selector
+            });
+            fetchDevices().then(() => {
+                populateEntryEsp32Selector();
+                populateExitEsp32Selector(); // Populate exit ESP32 selector
+                populateBarrierEsp32Selector();
+                populateSlotEsp32Selector();
+            });
+        } else {
+            console.log("checkLoginState: User is NOT logged in.");
+            loginModal.style.display = 'flex';
+            loginModal.classList.add('active');
+            appDiv.style.display = 'none';
+            appDiv.classList.add('hidden');
+            adminPanelSection.style.display = 'none';
+            adminElements.forEach(el => el.style.display = 'none');
+            threeJsCanvas.style.zIndex = "0";
+            document.body.style.backgroundColor = '#1f2937';
+        }
+    }
+
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        loginError.textContent = '';
+        const usernameVal = loginForm.username.value;
+        const passwordVal = loginForm.password.value;
+        console.log("loginForm submit: Attempting login for username:", usernameVal);
+
+        try {
+            const data = await apiRequest('/auth/login', 'POST', { username: usernameVal, password: passwordVal }, false);
+            if (data && data.token) {
+                console.log("loginForm submit: Login successful. Token received:", data.token);
+                localStorage.setItem('authToken', data.token);
+                localStorage.setItem('username', data.username);
+                localStorage.setItem('role', data.role);
+                console.log("loginForm submit: authToken set in localStorage:", localStorage.getItem('authToken'));
+                console.log("loginForm submit: username set in localStorage:", localStorage.getItem('username'));
+                showToast('Đăng nhập thành công!', 'success');
+                checkLoginState();
+            } else {
+                const errorMsg = (data && data.error) ? data.error : 'Đăng nhập thất bại. Vui lòng thử lại.';
+                loginError.textContent = errorMsg;
+                showToast(errorMsg, 'error');
+                console.log("loginForm submit: Login failed. Error:", errorMsg);
+            }
+        } catch (error) {
+            const errorMsg = 'Lỗi kết nối hoặc server. Vui lòng thử lại.';
+            loginError.textContent = errorMsg;
+            showToast(errorMsg, 'error');
+            console.log("loginForm submit: Login catch error:", error);
+        }
+    });
+
+    logoutButton.addEventListener('click', () => {
+        logout();
+        showToast('Đã đăng xuất.', 'info');
+    });
+
+    function logout() {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('username');
+        localStorage.removeItem('role');
+        authToken = null;
+        currentUserRole = null;
+        currentLotId = null;
+        allParkingLotsData = [];
+        allDevicesData = [];
+        // Reset UI elements
+        parkingLotSelector.innerHTML = '<option value="">-- Chọn một bãi đỗ --</option>';
+        entryLotSelector.innerHTML = '<option value="">-- Chọn bãi đỗ --</option>';
+        exitLotSelector.innerHTML = '<option value="">-- Chọn bãi đỗ --</option>';
+        entryEsp32Selector.innerHTML = '<option value="">-- Chọn thiết bị --</option>';
+        exitEsp32Selector.innerHTML = '<option value="">-- Chọn thiết bị --</option>';
+        slotGrid.innerHTML = '<p class="text-gray-500 col-span-full">Vui lòng chọn một bãi đỗ xe để xem chi tiết.</p>';
+        barrierControls.innerHTML = '<p class="text-gray-500">Vui lòng chọn một bãi đỗ xe.</p>';
+        parkingLotOverview.innerHTML = '';
+        activeSessionsTableBody.innerHTML = '<tr><td colspan="6" class="px-4 py-4 text-sm text-gray-500 text-center">Vui lòng chọn bãi đỗ.</td></tr>';
+        deviceMonitoringTableBody.innerHTML = '<tr><td colspan="6" class="px-4 py-4 text-sm text-gray-500 text-center">Không có dữ liệu thiết bị.</td></tr>';
+        parkingLotListAdmin.innerHTML = '<p class="text-sm text-gray-500 p-3">Đang tải danh sách bãi đỗ...</p>';
+        parkingSlotListAdmin.innerHTML = '<p class="text-sm text-gray-500 p-3">Chọn một bãi đỗ để quản lý chỗ.</p>';
+        barrierListAdmin.innerHTML = '<p class="text-sm text-gray-500 p-3">Chọn một bãi đỗ để quản lý rào chắn.</p>';
+        checkLoginState();
+    }
+
+    // --- PARKING LOTS (Admin & User) ---
+    async function fetchParkingLots() {
+        const lots = await apiRequest('/api/v1/parking-lots');
+        if (lots) {
+            allParkingLotsData = lots;
+            // Populate main selector
+            parkingLotSelector.innerHTML = '<option value="">-- Chọn một bãi đỗ --</option>';
+            lots.forEach(lot => {
+                const option = document.createElement('option');
+                option.value = lot.id;
+                option.textContent = `${lot.name} (ID: ${lot.id})`;
+                parkingLotSelector.appendChild(option);
+            });
+            // Populate admin list if admin
+            if (currentUserRole === 'admin') {
+                renderParkingLotListAdmin(lots);
+            }
+            // Populate entry/exit lot selectors
+            populateEntryLotSelector();
+            populateExitLotSelector();
+        }
+    }
+
+    function renderParkingLotListAdmin(lots) {
+        parkingLotListAdmin.innerHTML = '';
+        if (!lots || lots.length === 0) {
+            parkingLotListAdmin.innerHTML = '<p class="text-sm text-gray-500 p-3">Chưa có bãi đỗ nào.</p>';
+            return;
+        }
+        const table = document.createElement('table');
+        table.classList.add('min-w-full', 'divide-y', 'divide-gray-200', 'text-sm');
+        table.innerHTML = `
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Tên Bãi</th>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Địa chỉ</th>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Tổng chỗ</th>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200"></tbody>
+            `;
+        const tbody = table.querySelector('tbody');
+        lots.forEach(lot => {
+            const row = tbody.insertRow();
+            row.innerHTML = `
+                    <td class="px-3 py-2 whitespace-nowrap">${lot.name}</td>
+                    <td class="px-3 py-2 whitespace-nowrap">${lot.address || 'N/A'}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-center">${lot.total_slots}</td>
+                    <td class="px-3 py-2 whitespace-nowrap">
+                        <button class="text-indigo-600 hover:text-indigo-900 mr-2 edit-lot-btn" data-id="${lot.id}" title="Sửa bãi đỗ"><i class="fas fa-edit"></i></button>
+                        <button class="text-red-600 hover:text-red-900 delete-lot-btn" data-id="${lot.id}" title="Xóa bãi đỗ"><i class="fas fa-trash"></i></button>
+                    </td>
+                `;
+        });
+        parkingLotListAdmin.appendChild(table);
+
+        document.querySelectorAll('.edit-lot-btn').forEach(btn => btn.addEventListener('click', handleEditLot));
+        document.querySelectorAll('.delete-lot-btn').forEach(btn => btn.addEventListener('click', handleDeleteLot));
+    }
+
+    addParkingLotBtn.addEventListener('click', () => {
+        parkingLotForm.reset();
+        document.getElementById('parkingLotId').value = '';
+        parkingLotModalTitle.textContent = 'Thêm Bãi Đỗ Xe Mới';
+        parkingLotModalEl.classList.add('active');
+    });
+
+    cancelParkingLotModal.addEventListener('click', () => {
+        parkingLotModalEl.classList.remove('active');
+    });
+
+    parkingLotForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('parkingLotId').value;
+        const name = document.getElementById('parkingLotName').value;
+        const address = document.getElementById('parkingLotAddress').value;
+        const total_slots = parseInt(document.getElementById('parkingLotTotalSlots').value) || 0;
+
+        const payload = { name, address, total_slots };
+        let result;
+        if (id) {
+            result = await apiRequest(`/api/v1/parking-lots/${id}`, 'PUT', payload);
+        } else {
+            result = await apiRequest('/api/v1/parking-lots', 'POST', payload);
+        }
+
+        if (result && (result.id || result.success)) {
+            parkingLotModalEl.classList.remove('active');
+            fetchParkingLots();
+            showToast(`Bãi đỗ xe đã được ${id ? 'cập nhật' : 'thêm'} thành công!`, 'success');
+        }
+    });
+
+    function handleEditLot(event) {
+        const id = event.currentTarget.dataset.id;
+        const lot = allParkingLotsData.find(l => l.id == id);
+        if (lot) {
+            document.getElementById('parkingLotId').value = lot.id;
+            document.getElementById('parkingLotName').value = lot.name;
+            document.getElementById('parkingLotAddress').value = lot.address || '';
+            document.getElementById('parkingLotTotalSlots').value = lot.total_slots || 0;
+            parkingLotModalTitle.textContent = 'Sửa Thông Tin Bãi Đỗ Xe';
+            parkingLotModalEl.classList.add('active');
+        }
+    }
+
+    async function handleDeleteLot(event) {
+        const id = event.currentTarget.dataset.id;
+        const lot = allParkingLotsData.find(l => l.id == id);
+        if (confirm(`Bạn có chắc muốn xóa bãi đỗ "${lot ? lot.name : id}"? Hành động này có thể không thành công nếu bãi còn chỗ đỗ hoặc rào chắn.`)) {
+            const result = await apiRequest(`/api/v1/parking-lots/${id}`, 'DELETE');
+            if (result && result.success) {
+                fetchParkingLots();
+                showToast('Bãi đỗ xe đã được xóa (hoặc yêu cầu xóa đã được gửi).', 'success');
+                if (currentLotId == id) {
+                    currentLotId = null;
+                    parkingLotSelector.value = "";
+                    slotGrid.innerHTML = '<p class="text-gray-500 col-span-full">Vui lòng chọn một bãi đỗ xe để xem chi tiết.</p>';
+                    barrierControls.innerHTML = '<p class="text-gray-500">Vui lòng chọn một bãi đỗ xe.</p>';
+                    parkingLotOverview.innerHTML = '';
+                    activeSessionsTableBody.innerHTML = '<tr><td colspan="6" class="px-4 py-4 text-sm text-gray-500 text-center">Vui lòng chọn bãi đỗ.</td></tr>';
+                    adminAddParkingSlotBtn.disabled = true;
+                    adminAddBarrierBtn.disabled = true;
+                    addSlotInlineBtn.disabled = true;
+
+                }
+            }
+        }
+    }
+
+    parkingLotSelector.addEventListener('change', async (e) => {
+        currentLotId = e.target.value;
+        const isAdmin = currentUserRole === 'admin';
+        adminAddParkingSlotBtn.disabled = !isAdmin || !currentLotId;
+        adminAddBarrierBtn.disabled = !isAdmin || !currentLotId;
+        addSlotInlineBtn.disabled = !isAdmin || !currentLotId;
+        addSlotInlineBtn.style.display = (isAdmin && currentLotId) ? 'inline-flex' : 'none';
+
+        if (currentLotId) {
+            await loadDataForLot(currentLotId);
+            if (isAdmin) {
+                fetchSlotsForAdminList(currentLotId);
+                fetchBarriersForAdminList(currentLotId);
+            }
+        } else {
+            slotGrid.innerHTML = '<p class="text-gray-500 col-span-full">Vui lòng chọn một bãi đỗ xe để xem chi tiết.</p>';
+            barrierControls.innerHTML = '<p class="text-gray-500">Vui lòng chọn một bãi đỗ xe.</p>';
+            parkingLotOverview.innerHTML = '';
+            activeSessionsTableBody.innerHTML = '<tr><td colspan="6" class="px-4 py-4 text-sm text-gray-500 text-center">Vui lòng chọn bãi đỗ.</td></tr>';
+            if (isAdmin) {
+                parkingSlotListAdmin.innerHTML = '<p class="text-sm text-gray-500 p-3">Chọn một bãi đỗ để quản lý chỗ.</p>';
+                barrierListAdmin.innerHTML = '<p class="text-sm text-gray-500 p-3">Chọn một bãi đỗ để quản lý rào chắn.</p>';
+            }
+        }
+    });
+
+    refreshDataButton.addEventListener('click', async () => {
+        if (currentLotId) {
+            await loadDataForLot(currentLotId);
+            if (currentUserRole === 'admin') {
+                fetchSlotsForAdminList(currentLotId);
+                fetchBarriersForAdminList(currentLotId);
+            }
+        } else {
+            await fetchParkingLots();
+        }
+        await fetchDevices();
+        showToast('Dữ liệu đã được làm mới!', 'info');
+    });
+
+    async function loadDataForLot(lotId) {
+        fetchSlotsForLot(lotId);
+        fetchBarriersForLot(lotId);
+        fetchActiveSessionsForLot(lotId);
+    }
+
+    // --- PARKING SLOTS ---
+    async function fetchSlotsForLot(lotId) {
+        const slots = await apiRequest(`/api/v1/parking-lots/${lotId}/slots`);
+        if (slots) {
+            currentSlotsData = slots;
+            renderSlots(slots);
+            updateParkingLotOverview(slots);
+        } else {
+            currentSlotsData = [];
+            slotGrid.innerHTML = '<p class="text-red-500 col-span-full">Không thể tải dữ liệu chỗ đỗ.</p>';
+            updateParkingLotOverview([]);
+        }
+    }
+
+    function renderSlots(slots) {
+        slotGrid.innerHTML = '';
+        if (slots.length === 0) {
+            slotGrid.innerHTML = '<p class="text-gray-500 col-span-full">Không có chỗ đỗ nào trong bãi này.</p>';
+            return;
+        }
+        slots.sort((a,b) => a.slot_identifier.localeCompare(b.slot_identifier));
+        slots.forEach(slot => {
+            const slotDiv = document.createElement('div');
+            slotDiv.classList.add('slot', 'p-3', 'rounded-md', 'text-center', 'text-sm', 'font-medium', 'shadow', 'relative');
+
+            let statusClass = '';
+            let statusIcon = '';
+            let statusText = slot.status.charAt(0).toUpperCase() + slot.status.slice(1);
+
+            switch (slot.status) {
+                case 'occupied': statusClass = 'occupied'; statusIcon = '<i class="fas fa-car text-lg mb-1"></i>'; break;
+                case 'vacant': statusClass = 'vacant'; statusIcon = '<i class="fas fa-parking text-lg mb-1"></i>'; break;
+                case 'maintenance': statusClass = 'maintenance'; statusIcon = '<i class="fas fa-tools text-lg mb-1"></i>'; break;
+                case 'reserved': statusClass = 'reserved'; statusIcon = '<i class="fas fa-tag text-lg mb-1"></i>'; break;
+                default: statusClass = 'bg-gray-300';
+            }
+            slotDiv.classList.add(statusClass);
+
+            let adminButtons = '';
+            if (currentUserRole === 'admin') {
+                adminButtons = `
+                        <div class="absolute top-1 right-1 flex space-x-1">
+                            <button class="text-xs text-white opacity-70 hover:opacity-100 edit-slot-btn-admin" data-id="${slot.id}" data-lotid="${slot.lot_id}" title="Sửa chỗ"><i class="fas fa-edit"></i></button>
+                            <button class="text-xs text-white opacity-70 hover:opacity-100 delete-slot-btn-admin" data-id="${slot.id}" data-lotid="${slot.lot_id}" title="Xóa chỗ"><i class="fas fa-trash"></i></button>
+                        </div>
+                    `;
+            }
+
+            slotDiv.innerHTML = `
+                    ${adminButtons}
+                    ${statusIcon}
+                    <div>${slot.slot_identifier}</div>
+                    <div class="text-xs opacity-80">${statusText}</div>
+                `;
+            slotGrid.appendChild(slotDiv);
+        });
+        if (currentUserRole === 'admin') {
+            document.querySelectorAll('.edit-slot-btn-admin').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); handleEditParkingSlot(e);}));
+            document.querySelectorAll('.delete-slot-btn-admin').forEach(btn => btn.addEventListener('click', (e) => {e.stopPropagation(); handleDeleteParkingSlot(e);}));
+        }
+    }
+
+    function updateParkingLotOverview(slots) {
+        const totalSlots = slots.length;
+        const occupiedCount = slots.filter(s => s.status === 'occupied').length;
+        const vacantCount = slots.filter(s => s.status === 'vacant').length;
+
+        parkingLotOverview.innerHTML = `
+                <div class="bg-blue-100 p-3 rounded-md shadow">
+                    <p class="font-semibold text-blue-700">Tổng số chỗ</p>
+                    <p class="text-2xl font-bold text-blue-800">${totalSlots}</p>
+                </div>
+                <div class="bg-red-100 p-3 rounded-md shadow">
+                    <p class="font-semibold text-red-700">Số chỗ có xe</p>
+                    <p class="text-2xl font-bold text-red-800">${occupiedCount}</p>
+                </div>
+                <div class="bg-green-100 p-3 rounded-md shadow">
+                    <p class="font-semibold text-green-700">Số chỗ còn trống</p>
+                    <p class="text-2xl font-bold text-green-800">${vacantCount}</p>
+                </div>
+            `;
+    }
+
+    async function fetchSlotsForAdminList(lotId) {
+        const slots = await apiRequest(`/api/v1/parking-lots/${lotId}/slots`);
+        renderParkingSlotListAdmin(slots, lotId);
+    }
+
+    function renderParkingSlotListAdmin(slots, lotId) {
+        parkingSlotListAdmin.innerHTML = '';
+        if (!slots || slots.length === 0) {
+            parkingSlotListAdmin.innerHTML = '<p class="text-sm text-gray-500 p-3">Chưa có chỗ đỗ nào cho bãi này.</p>';
+            return;
+        }
+        const table = document.createElement('table');
+        table.classList.add('min-w-full', 'divide-y', 'divide-gray-200', 'text-sm');
+        table.innerHTML = `
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Mã Chỗ</th>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">ESP32</th>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Trạng Thái</th>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200"></tbody>
+            `;
+        const tbody = table.querySelector('tbody');
+        slots.sort((a,b) => a.slot_identifier.localeCompare(b.slot_identifier));
+        slots.forEach(slot => {
+            const row = tbody.insertRow();
+            row.innerHTML = `
+                    <td class="px-3 py-2 whitespace-nowrap">${slot.slot_identifier}</td>
+                    <td class="px-3 py-2 whitespace-nowrap">${slot.esp32_thing_name || 'N/A'}</td>
+                    <td class="px-3 py-2 whitespace-nowrap">${slot.status}</td>
+                    <td class="px-3 py-2 whitespace-nowrap">
+                        <button class="text-indigo-600 hover:text-indigo-900 mr-2 edit-slot-btn-admin" data-id="${slot.id}" data-lotid="${lotId}" title="Sửa chỗ đỗ"><i class="fas fa-edit"></i></button>
+                        <button class="text-red-600 hover:text-red-900 delete-slot-btn-admin" data-id="${slot.id}" data-lotid="${lotId}" title="Xóa chỗ đỗ"><i class="fas fa-trash"></i></button>
+                    </td>
+                `;
+        });
+        parkingSlotListAdmin.appendChild(table);
+        document.querySelectorAll('.edit-slot-btn-admin').forEach(btn => btn.addEventListener('click', handleEditParkingSlot));
+        document.querySelectorAll('.delete-slot-btn-admin').forEach(btn => btn.addEventListener('click', handleDeleteParkingSlot));
+    }
+
+    adminAddParkingSlotBtn.addEventListener('click', () => {
+        if (!currentLotId) {
+            showToast('Vui lòng chọn một bãi đỗ trước khi thêm chỗ đỗ.', 'warning');
+            return;
+        }
+        parkingSlotForm.reset();
+        document.getElementById('parkingSlotId').value = '';
+        document.getElementById('parkingSlotLotId').value = currentLotId;
+        parkingSlotModalTitle.textContent = 'Thêm Chỗ Đỗ Mới';
+        populateSlotEsp32Selector();
+        parkingSlotModalEl.classList.add('active');
+    });
+    addSlotInlineBtn.addEventListener('click', () => {
+        if (!currentLotId) {
+            showToast('Vui lòng chọn một bãi đỗ trước khi thêm chỗ đỗ.', 'warning');
+            return;
+        }
+        if (currentUserRole !== 'admin') return;
+
+        parkingSlotForm.reset();
+        document.getElementById('parkingSlotId').value = '';
+        document.getElementById('parkingSlotLotId').value = currentLotId;
+        parkingSlotModalTitle.textContent = 'Thêm Chỗ Đỗ Mới (Từ Sơ Đồ)';
+        populateSlotEsp32Selector();
+        parkingSlotModalEl.classList.add('active');
+    });
+
+
+    cancelParkingSlotModal.addEventListener('click', () => parkingSlotModalEl.classList.remove('active'));
+
+    parkingSlotForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const slotId = document.getElementById('parkingSlotId').value;
+        const lotId = document.getElementById('parkingSlotLotId').value;
+        const identifier = document.getElementById('slotIdentifier').value;
+        const thingName = document.getElementById('slotEsp32ThingName').value;
+        const status = document.getElementById('slotStatus').value;
+
+        const payload = {
+            lot_id: parseInt(lotId),
+            slot_identifier: identifier,
+            esp32_thing_name: thingName,
+            status: status
+        };
+
+        let result;
+        if (slotId) {
+            result = await apiRequest(`/api/v1/parking-slots/${slotId}`, 'PUT', payload);
+        } else {
+            result = await apiRequest(`/api/v1/parking-lots/${lotId}/slots`, 'POST', payload);
+        }
+
+        if (result && (result.id || result.success)) {
+            parkingSlotModalEl.classList.remove('active');
+            fetchSlotsForAdminList(lotId);
+            if (currentLotId == lotId) fetchSlotsForLot(lotId);
+            showToast(`Chỗ đỗ đã được ${slotId ? 'cập nhật' : 'thêm'} thành công!`, 'success');
+        }
+    });
+
+    function handleEditParkingSlot(event) {
+        const slotId = event.currentTarget.dataset.id;
+        const lotId = event.currentTarget.dataset.lotid;
+
+        const slot = currentSlotsData.find(s => s.id == slotId && s.lot_id == lotId);
+
+        if (slot) {
+            document.getElementById('parkingSlotId').value = slot.id;
+            document.getElementById('parkingSlotLotId').value = slot.lot_id;
+            document.getElementById('slotIdentifier').value = slot.slot_identifier;
+            populateSlotEsp32Selector();
+            document.getElementById('slotEsp32ThingName').value = slot.esp32_thing_name || '';
+            document.getElementById('slotStatus').value = slot.status;
+            parkingSlotModalTitle.textContent = 'Sửa Thông Tin Chỗ Đỗ';
+            parkingSlotModalEl.classList.add('active');
+        } else {
+            showToast('Không tìm thấy thông tin chỗ đỗ để sửa. Vui lòng làm mới dữ liệu.', 'error');
+        }
+    }
+
+    async function handleDeleteParkingSlot(event) {
+        const slotId = event.currentTarget.dataset.id;
+        const lotId = event.currentTarget.dataset.lotid;
+        if (confirm(`Bạn có chắc muốn xóa chỗ đỗ ID ${slotId}?`)) {
+            const result = await apiRequest(`/api/v1/parking-slots/${slotId}`, 'DELETE');
+            if (result && result.success) {
+                fetchSlotsForAdminList(lotId);
+                if (currentLotId == lotId) fetchSlotsForLot(lotId);
+                showToast('Chỗ đỗ đã được xóa.', 'success');
+            }
+        }
+    }
+    function populateSlotEsp32Selector() {
+        slotEsp32ThingNameSelector.innerHTML = '<option value="">-- Không gán thiết bị --</option>';
+        allDevicesData.forEach(device => {
+            const option = document.createElement('option');
+            option.value = device.thing_name;
+            option.textContent = `${device.thing_name} (Bãi ID: ${device.lot_id && device.lot_id.Valid ? device.lot_id.Int64 : 'N/A'})`;
+            slotEsp32ThingNameSelector.appendChild(option);
+        });
+    }
+
+
+    // --- BARRIERS ---
+    async function fetchBarriersForLot(lotId) {
+        const barriers = await apiRequest(`/api/v1/parking-lots/${lotId}/barriers`);
+        if (barriers) {
+            currentBarriersData = barriers;
+            renderBarriers(barriers);
+        } else {
+            currentBarriersData = [];
+            barrierControls.innerHTML = '<p class="text-red-500">Không thể tải dữ liệu rào chắn.</p>';
+        }
+    }
+    function renderBarriers(barriers) {
+        barrierControls.innerHTML = '';
+        if (barriers.length === 0) {
+            barrierControls.innerHTML = '<p class="text-gray-500">Không có rào chắn nào cho bãi này.</p>';
+            return;
+        }
+        barriers.forEach(barrier => {
+            const barrierDiv = document.createElement('div');
+            barrierDiv.classList.add('p-4', 'border', 'border-gray-200', 'rounded-md', 'shadow-sm', 'relative');
+            const stateText = barrier.current_state.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            const isOpen = barrier.current_state.includes('open');
+
+            let adminBarrierButtons = '';
+            if (currentUserRole === 'admin') {
+                adminBarrierButtons = `
+                        <div class="absolute top-1 right-1 flex space-x-1">
+                            <button class="text-xs text-gray-500 hover:text-gray-700 edit-barrier-btn-admin" data-id="${barrier.id}" data-lotid="${barrier.lot_id}" title="Sửa rào chắn"><i class="fas fa-edit"></i></button>
+                            <button class="text-xs text-red-500 hover:text-red-700 delete-barrier-btn-admin" data-id="${barrier.id}" data-lotid="${barrier.lot_id}" title="Xóa rào chắn"><i class="fas fa-trash"></i></button>
+                        </div>
+                    `;
+            }
+
+            barrierDiv.innerHTML = `
+                    ${adminBarrierButtons}
+                    <h3 class="font-semibold text-md text-gray-700">${barrier.barrier_identifier} (${barrier.barrier_type})</h3>
+                    <p class="text-sm mb-1">Thiết bị: <span class="font-medium">${barrier.esp32_thing_name}</span></p>
+                    <p class="text-sm mb-3">Trạng thái:
+                        <span class="font-semibold ${isOpen ? 'text-green-600' : 'text-red-600'}">${stateText}</span>
+                    </p>
+                    <div class="flex space-x-2">
+                        <button data-device="${barrier.esp32_thing_name}" data-type="${barrier.barrier_type}" data-command="open"
+                                class="flex-1 btn btn-success text-sm ${isOpen ? 'opacity-50 cursor-not-allowed' : ''}" ${isOpen ? 'disabled' : ''}>
+                            <i class="fas fa-door-open mr-1"></i>Mở Rào
+                        </button>
+                        <button data-device="${barrier.esp32_thing_name}" data-type="${barrier.barrier_type}" data-command="close"
+                                class="flex-1 btn btn-danger text-sm ${!isOpen ? 'opacity-50 cursor-not-allowed' : ''}" ${!isOpen ? 'disabled' : ''}>
+                            <i class="fas fa-door-closed mr-1"></i>Đóng Rào
+                        </button>
+                    </div>
+                `;
+            barrierControls.appendChild(barrierDiv);
+        });
+
+        document.querySelectorAll('#barrierControls button[data-command]').forEach(button => {
+            button.addEventListener('click', handleBarrierControlButtonClick);
+        });
+        if (currentUserRole === 'admin') {
+            document.querySelectorAll('.edit-barrier-btn-admin').forEach(btn => btn.addEventListener('click', (e) => { e.stopPropagation(); handleEditBarrier(e);}));
+            document.querySelectorAll('.delete-barrier-btn-admin').forEach(btn => btn.addEventListener('click', (e) => {e.stopPropagation(); handleDeleteBarrier(e);}));
+        }
+    }
+    async function handleBarrierControlButtonClick(event) {
+        const button = event.currentTarget;
+        const deviceId = button.dataset.device;
+        const barrierType = button.dataset.type;
+        const command = button.dataset.command;
+
+        if (!deviceId || !barrierType || !command) {
+            showToast('Thông tin điều khiển rào chắn không đầy đủ.', 'error');
+            return;
+        }
+
+        const confirmation = confirm(`Bạn có chắc muốn ${command === 'open' ? 'MỞ' : 'ĐÓNG'} rào ${barrierType} của thiết bị ${deviceId}?`);
+        if (!confirmation) return;
+
+        const result = await apiRequest('/api/v1/iot/commands/barrier', 'POST', {
+            esp32_controller_id: deviceId,
+            barrier_type: barrierType,
+            command: command
+        });
+
+        if (result) {
+            showToast(`Đã gửi lệnh ${command} tới rào ${barrierType} của thiết bị ${deviceId}. Request ID: ${result.request_id}`, 'success');
+            if (currentLotId) {
+                setTimeout(() => fetchBarriersForLot(currentLotId), 2000);
+            }
+        }
+    }
+    async function fetchBarriersForAdminList(lotId) {
+        const barriers = await apiRequest(`/api/v1/parking-lots/${lotId}/barriers`);
+        renderBarrierListAdmin(barriers, lotId);
+    }
+    function renderBarrierListAdmin(barriers, lotId) {
+        barrierListAdmin.innerHTML = '';
+        if (!barriers || barriers.length === 0) {
+            barrierListAdmin.innerHTML = '<p class="text-sm text-gray-500 p-3">Chưa có rào chắn nào cho bãi này.</p>';
+            return;
+        }
+        const table = document.createElement('table');
+        table.classList.add('min-w-full', 'divide-y', 'divide-gray-200', 'text-sm');
+        table.innerHTML = `
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Mã Rào</th>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">ESP32</th>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Loại</th>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200"></tbody>
+            `;
+        const tbody = table.querySelector('tbody');
+        barriers.forEach(barrier => {
+            const row = tbody.insertRow();
+            row.innerHTML = `
+                    <td class="px-3 py-2 whitespace-nowrap">${barrier.barrier_identifier}</td>
+                    <td class="px-3 py-2 whitespace-nowrap">${barrier.esp32_thing_name}</td>
+                    <td class="px-3 py-2 whitespace-nowrap">${barrier.barrier_type}</td>
+                    <td class="px-3 py-2 whitespace-nowrap">
+                        <button class="text-indigo-600 hover:text-indigo-900 mr-2 edit-barrier-btn-admin" data-id="${barrier.id}" data-lotid="${lotId}" title="Sửa rào chắn"><i class="fas fa-edit"></i></button>
+                        <button class="text-red-600 hover:text-red-900 delete-barrier-btn-admin" data-id="${barrier.id}" data-lotid="${lotId}" title="Xóa rào chắn"><i class="fas fa-trash"></i></button>
+                    </td>
+                `;
+        });
+        barrierListAdmin.appendChild(table);
+        document.querySelectorAll('.edit-barrier-btn-admin').forEach(btn => btn.addEventListener('click', handleEditBarrier));
+        document.querySelectorAll('.delete-barrier-btn-admin').forEach(btn => btn.addEventListener('click', handleDeleteBarrier));
+    }
+
+    adminAddBarrierBtn.addEventListener('click', () => {
+        if (!currentLotId) {
+            showToast('Vui lòng chọn một bãi đỗ trước khi thêm rào chắn.', 'warning');
+            return;
+        }
+        barrierForm.reset();
+        document.getElementById('barrierId').value = '';
+        document.getElementById('barrierLotId').value = currentLotId;
+        barrierModalTitle.textContent = 'Thêm Rào Chắn Mới';
+        populateBarrierEsp32Selector();
+        barrierModalEl.classList.add('active');
+    });
+
+    cancelBarrierModal.addEventListener('click', () => barrierModalEl.classList.remove('active'));
+
+    barrierForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const barrierId = document.getElementById('barrierId').value;
+        const lotId = document.getElementById('barrierLotId').value;
+        const identifier = document.getElementById('barrierIdentifier').value;
+        const thingName = document.getElementById('barrierEsp32ThingName').value;
+        const type = document.getElementById('barrierType').value;
+
+        const payload = {
+            lot_id: parseInt(lotId),
+            barrier_identifier: identifier,
+            esp32_thing_name: thingName,
+            barrier_type: type
+        };
+        let result;
+        if (barrierId) {
+            result = await apiRequest(`/api/v1/barriers/${barrierId}`, 'PUT', payload);
+        } else {
+            result = await apiRequest(`/api/v1/barriers`, 'POST', payload);
+        }
+        if (result && (result.id || result.success)) {
+            barrierModalEl.classList.remove('active');
+            fetchBarriersForAdminList(lotId);
+            if (currentLotId == lotId) fetchBarriersForLot(lotId);
+            showToast(`Rào chắn đã được ${barrierId ? 'cập nhật' : 'thêm'} thành công!`, 'success');
+        }
+    });
+
+    function handleEditBarrier(event) {
+        const barrierId = event.currentTarget.dataset.id;
+        // Tìm barrier trong currentBarriersData hoặc allParkingLotsData (nếu có cấu trúc lồng)
+        const barrier = currentBarriersData.find(b => b.id == barrierId) ||
+            allParkingLotsData.flatMap(l => l.barriers || []).find(b => b.id == barrierId);
+
+        if (barrier) {
+            document.getElementById('barrierId').value = barrier.id;
+            document.getElementById('barrierLotId').value = barrier.lot_id;
+            document.getElementById('barrierIdentifier').value = barrier.barrier_identifier;
+            populateBarrierEsp32Selector();
+            document.getElementById('barrierEsp32ThingName').value = barrier.esp32_thing_name;
+            document.getElementById('barrierType').value = barrier.barrier_type;
+            barrierModalTitle.textContent = 'Sửa Thông Tin Rào Chắn';
+            barrierModalEl.classList.add('active');
+        } else {
+            showToast('Không tìm thấy thông tin rào chắn để sửa.', 'error');
+        }
+    }
+    async function handleDeleteBarrier(event) {
+        const barrierId = event.currentTarget.dataset.id;
+        const lotId = event.currentTarget.dataset.lotid;
+        if (confirm(`Bạn có chắc muốn xóa rào chắn ID ${barrierId}?`)) {
+            const result = await apiRequest(`/api/v1/barriers/${barrierId}`, 'DELETE');
+            if (result && result.success) {
+                fetchBarriersForAdminList(lotId);
+                if (currentLotId == lotId) fetchBarriersForLot(lotId);
+                showToast('Rào chắn đã được xóa.', 'success');
+            }
+        }
+    }
+    function populateBarrierEsp32Selector() {
+        barrierEsp32ThingNameSelector.innerHTML = '<option value="">-- Chọn thiết bị --</option>';
+        allDevicesData.forEach(device => {
+            const option = document.createElement('option');
+            option.value = device.thing_name;
+            option.textContent = `${device.thing_name} (Bãi ID: ${device.lot_id && device.lot_id.Valid ? device.lot_id.Int64 : 'N/A'})`;
+            barrierEsp32ThingNameSelector.appendChild(option);
+        });
+    }
+
+
+    // --- ACTIVE PARKING SESSIONS ---
+    async function fetchActiveSessionsForLot(lotId) {
+        const sessions = await apiRequest(`/api/v1/parking-lots/${lotId}/active-sessions`);
+        renderActiveSessions(sessions);
+    }
+
+    function renderActiveSessions(sessions) {
+        activeSessionsTableBody.innerHTML = '';
+        if (!sessions || sessions.length === 0) {
+            activeSessionsTableBody.innerHTML = '<tr><td colspan="6" class="px-4 py-4 text-sm text-gray-500 text-center">Không có phiên nào đang hoạt động.</td></tr>';
+            return;
+        }
+        sessions.forEach(session => {
+            const entryTime = new Date(session.entry_time).toLocaleString('vi-VN');
+
+            let durationText = 'Đang tính...';
+            if (session.duration_minutes && session.duration_minutes.Valid) {
+                const hours = Math.floor(session.duration_minutes.Int64 / 60);
+                const minutes = session.duration_minutes.Int64 % 60;
+                durationText = '';
+                if (hours > 0) durationText += `${hours} giờ `;
+                durationText += `${minutes} phút`;
+            }
+
+            const slotIdentifier = session.slot_id;
+            const vehicleIdText = session.vehicle_identifier;
+
+            const row = activeSessionsTableBody.insertRow();
+            row.innerHTML = `
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${session.id}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${vehicleIdText}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${slotIdentifier}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${session.esp32_thing_name}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${entryTime}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${durationText}</td>
+                `;
+        });
+    }
+
+    // --- DEVICE MONITORING ---
+    async function fetchDevices() {
+        const devices = await apiRequest('/api/v1/devices');
+        if(devices) {
+            allDevicesData = devices;
+            populateEntryEsp32Selector();
+            populateBarrierEsp32Selector();
+            populateSlotEsp32Selector();
+        }
+        renderDevices(devices);
+    }
+    function renderDevices(devices) {
+        deviceMonitoringTableBody.innerHTML = '';
+        if (!devices || devices.length === 0) {
+            deviceMonitoringTableBody.innerHTML = '<tr><td colspan="6" class="px-4 py-4 text-sm text-gray-500 text-center">Không có thiết bị nào được giám sát.</td></tr>';
+            return;
+        }
+        devices.forEach(device => {
+            const lastSeen = device.last_seen_at && device.last_seen_at.Valid ? new Date(device.last_seen_at.Time).toLocaleString('vi-VN') : 'Chưa thấy';
+            let statusClass = 'text-yellow-600';
+            if (device.status === 'online') statusClass = 'text-green-600';
+            else if (device.status === 'offline' || device.status === 'error') statusClass = 'text-red-600';
+
+            const row = deviceMonitoringTableBody.insertRow();
+            row.innerHTML = `
+                    <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${device.thing_name}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${device.lot_id && device.lot_id.Valid ? device.lot_id.Int64 : 'N/A'}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm font-semibold ${statusClass}">${device.status ? device.status.toUpperCase() : 'UNKNOWN'}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${device.firmware_version || 'N/A'}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${lastSeen}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${device.ip_address || 'N/A'}</td>
+                `;
+        });
+    }
+
+    // --- VEHICLE ENTRY WITH WEBCAM & OCR ---
+    function populateEntryLotSelector() {
+        entryLotSelector.innerHTML = '<option value="">-- Chọn bãi đỗ --</option>';
+        allParkingLotsData.forEach(lot => {
+            const option = document.createElement('option');
+            option.value = lot.id;
+            option.textContent = `${lot.name} (ID: ${lot.id})`;
+            entryLotSelector.appendChild(option);
+        });
+    }
+    function populateExitLotSelector() { // Thêm hàm này
+        exitLotSelector.innerHTML = '<option value="">-- Chọn bãi đỗ --</option>';
+        allParkingLotsData.forEach(lot => {
+            const option = document.createElement('option');
+            option.value = lot.id;
+            option.textContent = `${lot.name} (ID: ${lot.id})`;
+            exitLotSelector.appendChild(option);
+        });
+    }
+
+    function populateEntryEsp32Selector() {
+        entryEsp32Selector.innerHTML = '<option value="">-- Chọn thiết bị --</option>';
+        allDevicesData.forEach(device => {
+            const option = document.createElement('option');
+            option.value = device.thing_name;
+            option.textContent = `${device.thing_name} (Bãi ID: ${device.lot_id && device.lot_id.Valid ? device.lot_id.Int64 : 'N/A'})`;
+            entryEsp32Selector.appendChild(option);
+        });
+    }
+    function populateExitEsp32Selector() { // Thêm hàm này
+        exitEsp32Selector.innerHTML = '<option value="">-- Chọn thiết bị --</option>';
+        allDevicesData.forEach(device => {
+            const option = document.createElement('option');
+            option.value = device.thing_name;
+            option.textContent = `${device.thing_name} (Bãi ID: ${device.lot_id && device.lot_id.Valid ? device.lot_id.Int64 : 'N/A'})`;
+            exitEsp32Selector.appendChild(option);
+        });
+    }
+
+
+    async function startWebcam() {
+        if (webcamStream) {
+            webcamStream.getTracks().forEach(track => track.stop());
+            webcamStream = null;
+            webcamContainer.classList.add('hidden');
+            startWebcamBtn.innerHTML = '<i class="fas fa-video mr-2"></i>Mở Webcam';
+            showToast('Đã tắt Webcam.', 'info');
+            return;
+        }
+        try {
+            webcamStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            webcamFeed.srcObject = webcamStream;
+            webcamContainer.classList.remove('hidden');
+            startWebcamBtn.innerHTML = '<i class="fas fa-video-slash mr-2"></i>Tắt Webcam';
+            showToast('Webcam đã được bật.', 'success');
+        } catch (err) {
+            console.error("Lỗi khi truy cập webcam: ", err);
+            showToast(`Không thể truy cập webcam: ${err.message}`, 'error');
+            webcamContainer.classList.add('hidden');
+            startWebcamBtn.innerHTML = '<i class="fas fa-video mr-2"></i>Mở Webcam';
+        }
+    }
+
+    startWebcamBtn.addEventListener('click', startWebcam);
+
+    captureWebcamBtn.addEventListener('click', () => {
+        if (!webcamStream || !webcamStream.active) {
+            showToast('Vui lòng mở webcam trước khi chụp ảnh.', 'warning');
+            return;
+        }
+        const context = captureCanvas.getContext('2d');
+        captureCanvas.width = webcamFeed.videoWidth;
+        captureCanvas.height = webcamFeed.videoHeight;
+        context.drawImage(webcamFeed, 0, 0, webcamFeed.videoWidth, webcamFeed.videoHeight);
+
+        const imageDataUrl = captureCanvas.toDataURL('image/jpeg');
+        capturedImagePreview.src = imageDataUrl;
+        recognizedPlateSpan.textContent = "Chờ xử lý OCR...";
+        licensePlateInput.value = "";
+        performOCR(imageDataUrl);
+    });
+
+
+    async function performOCR(imageSource) {
+        ocrLoadingIndicator.classList.remove('hidden');
+        ocrLoadingIndicator.classList.add('flex');
+        const ocrStatusText = ocrLoadingIndicator.querySelector('span');
+        ocrStatusText.textContent = "Đang nhận dạng biển số...";
+        recognizedPlateSpan.textContent = "Đang nhận dạng...";
+        licensePlateInput.value = "";
+
+        try {
+            // Chuyển đổi data URL thành blob
+            const fetchResponse = await fetch(imageSource);
+            const blob = await fetchResponse.blob();
+
+            // Tạo FormData và thêm hình ảnh vào
+            const formData = new FormData();
+            formData.append('image', blob);
+
+            // Gửi yêu cầu đến server OCR
+            const response = await fetch('http://localhost:8000/detect_plate', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error(`Lỗi HTTP! Trạng thái: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log("OCR Server Result:", result);
+
+            if (result.success && result.license_plates && result.license_plates.length > 0) {
+                let extractedPlate = result.license_plates[0]; // Lấy biển số đầu tiên trong danh sách
+
+                // Nếu có nhiều biển số, bạn có thể hiển thị tất cả
+                if (result.license_plates.length > 1) {
+                    console.log("Nhiều biển số được tìm thấy:", result.license_plates);
+                    // Tùy chọn: Có thể hiển thị thông báo hoặc cho phép người dùng chọn biển số
+                }
+
+                recognizedPlateSpan.textContent = extractedPlate;
+                licensePlateInput.value = extractedPlate;
+                showToast(`OCR nhận dạng: ${extractedPlate}`, 'success');
+            } else {
+                recognizedPlateSpan.textContent = "Không tìm thấy biển số";
+                licensePlateInput.value = "";
+                showToast('Không phát hiện biển số xe trong ảnh', 'warning');
+            }
+
+        } catch (error) {
+            console.error("Lỗi gửi yêu cầu OCR:", error);
+            recognizedPlateSpan.textContent = "Lỗi OCR";
+            showToast('Lỗi trong quá trình OCR: ' + error.message, 'error');
+        } finally {
+            ocrLoadingIndicator.classList.add('hidden');
+            ocrLoadingIndicator.classList.remove('flex');
+        }
+    }
+
+
+    imageUploadLPRElement.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                capturedImagePreview.src = e.target.result;
+                recognizedPlateSpan.textContent = "Nhấn nút OCR để xử lý";
+                licensePlateInput.value = "";
+            };
+            reader.readAsDataURL(file);
+        } else {
+            capturedImagePreview.src = 'https://placehold.co/300x150/e2e8f0/94a3b8?text=Chua+Tai+Anh';
+            recognizedPlateSpan.textContent = "Chưa có";
+            licensePlateInput.value = "";
+        }
+    });
+
+    ocrProcessButton.addEventListener('click', () => {
+        if (capturedImagePreview.src && !capturedImagePreview.src.startsWith('https://placehold.co')) {
+            performOCR(capturedImagePreview.src);
+        } else {
+            showToast('Vui lòng tải lên hoặc chụp một ảnh để thực hiện OCR.', 'warning');
+        }
+    });
+
+
+    simulateLprBtn.addEventListener('click', () => {
+        const randomChars = 'ABCDEFGHIKLMNOPQRSTUVWXYZ';
+        const randomNumbers = '0123456789';
+        let plate = `${randomNumbers.charAt(Math.floor(Math.random() * randomNumbers.length))}${randomNumbers.charAt(Math.floor(Math.random() * randomNumbers.length))}${randomChars.charAt(Math.floor(Math.random() * randomChars.length))}-`;
+        for (let i = 0; i < 4 + Math.floor(Math.random() * 2) ; i++) {
+            plate += randomNumbers.charAt(Math.floor(Math.random() * randomNumbers.length));
+        }
+        licensePlateInput.value = plate;
+        recognizedPlateSpan.textContent = plate;
+        capturedImagePreview.src = `https://placehold.co/300x150/60a5fa/white?text=${plate.replace("-","%20-%20")}`;
+        showToast(`Đã mô phỏng biển số: ${plate}`, 'info');
+        imageUploadLPRElement.value = null;
+    });
+
+    confirmVehicleEntryBtn.addEventListener('click', async () => {
+        const selectedLotId = entryLotSelector.value;
+        const plate = licensePlateInput.value.trim();
+        const selectedEsp32ThingName = entryEsp32Selector.value;
+
+        if (!selectedLotId) {
+            showToast('Vui lòng chọn bãi đỗ xe vào.', 'warning');
+            return;
+        }
+        if (!plate || plate === "Không rõ" || plate === "Đang nhận dạng..." || plate === "Lỗi OCR") {
+            showToast('Vui lòng cung cấp biển số xe hợp lệ (từ OCR hoặc nhập tay).', 'warning');
+            return;
+        }
+        if (!selectedEsp32ThingName) {
+            showToast('Vui lòng chọn thiết bị ESP32 ghi nhận.', 'warning');
+            return;
+        }
+
+        const entryTime = new Date().toISOString();
+
+        const payload = {
+            lot_id: parseInt(selectedLotId),
+            esp32_thing_name: selectedEsp32ThingName,
+            vehicle_identifier: plate,
+            entry_time: entryTime,
+        };
+
+        const result = await apiRequest('/api/v1/parking-sessions/check-in', 'POST', payload);
+
+        if (result && result.id) {
+            showToast(`Xe ${plate} đã được ghi nhận vào bãi ${selectedLotId} (Phiên ID: ${result.id}).`, 'success');
+            licensePlateInput.value = '';
+            recognizedPlateSpan.textContent = 'Chưa có';
+            capturedImagePreview.src = 'https://placehold.co/300x150/e2e8f0/94a3b8?text=Chua+Tai+Anh';
+            imageUploadLPRElement.value = null;
+            if (currentLotId === selectedLotId) {
+                fetchActiveSessionsForLot(currentLotId);
+            }
+        } else {
+            showToast(`Không thể ghi nhận xe vào. ${result ? result.error || result.details : ''}`, 'error');
+        }
+    });
+
+    // --- VEHICLE EXIT ---
+    confirmVehicleExitBtn.addEventListener('click', async () => {
+        const selectedLotId = exitLotSelector.value;
+        const plate = exitLicensePlateInput.value.trim();
+        const selectedEsp32ThingName = exitEsp32Selector.value;
+
+        if (!selectedLotId) {
+            showToast('Vui lòng chọn bãi đỗ xe ra.', 'warning');
+            return;
+        }
+        if (!plate) {
+            showToast('Vui lòng nhập biển số xe cần check-out.', 'warning');
+            return;
+        }
+        if (!selectedEsp32ThingName) {
+            showToast('Vui lòng chọn thiết bị ESP32 ghi nhận (cổng ra).', 'warning');
+            return;
+        }
+
+        const exitTime = new Date().toISOString();
+
+        const payload = {
+            lot_id: parseInt(selectedLotId),
+            esp32_thing_name: selectedEsp32ThingName,
+            vehicle_identifier: plate,
+            exit_time: exitTime,
+        };
+
+        const result = await apiRequest('/api/v1/parking-sessions/check-out', 'POST', payload);
+
+        if (result && result.id) {
+            showToast(`Xe ${plate} đã được ghi nhận ra khỏi bãi ${selectedLotId} (Phiên ID: ${result.id}). Phí: ${result.calculated_fee ? result.calculated_fee.Float64.toFixed(0) + ' VND' : 'N/A'}`, 'success');
+            exitLicensePlateInput.value = '';
+            // Làm mới danh sách phiên đang hoạt động nếu bãi đang chọn là bãi xe vừa ra
+            if (currentLotId === selectedLotId) {
+                fetchActiveSessionsForLot(currentLotId);
+                // Cũng nên làm mới sơ đồ chỗ đỗ nếu xe đó có chiếm chỗ cụ thể
+                fetchSlotsForLot(currentLotId);
+            }
+        } else {
+            showToast(`Không thể ghi nhận xe ra. ${result ? result.error || result.details : ''}`, 'error');
+        }
+    });
+
+
+    // --- INITIALIZATION ---
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log("DOMContentLoaded: Event fired.");
+        try {
+            initThreeJS();
+        } catch (e) {
+            console.error("Error during initThreeJS:", e);
+        }
+        try {
+            checkLoginState();
+        } catch (e) {
+            console.error("Error during checkLoginState on DOMContentLoaded:", e);
+        }
+    });
+
+</script>
+</body>
+</html>
