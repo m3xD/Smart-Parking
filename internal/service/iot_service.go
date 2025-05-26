@@ -8,7 +8,6 @@ import (
 	"smart_parking/internal/config"
 	"smart_parking/internal/domain"
 	"smart_parking/internal/repository"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -91,13 +90,13 @@ func (s *IoTService) HandleDeviceEvent(ctx context.Context, sqsMessageBody strin
 
 	switch genericEvent.MessageType {
 	case "startup":
-		var event domain.DeviceStartupInfoEvent
-		if err := json.Unmarshal(genericEvent.RawPayload, &event); err == nil {
-			event.GenericIoTEvent = genericEvent // Chép các trường chung
-			processingError = s.parkingService.HandleDeviceStartup(ctx, event)
-		} else {
-			processingError = fmt.Errorf("lỗi unmarshal startup event: %w", err)
-		}
+		//var event domain.DeviceStartupInfoEvent
+		//if err := json.Unmarshal(genericEvent.RawPayload, &event); err == nil {
+		//	event.GenericIoTEvent = genericEvent // Chép các trường chung
+		//	processingError = s.parkingService.HandleDeviceStartup(ctx, event)
+		//} else {
+		//	processingError = fmt.Errorf("lỗi unmarshal startup event: %w", err)
+		//}
 	case "barrier_state":
 		var event domain.DeviceBarrierStateEvent
 		if err := json.Unmarshal(genericEvent.RawPayload, &event); err == nil {
@@ -131,13 +130,13 @@ func (s *IoTService) HandleDeviceEvent(ctx context.Context, sqsMessageBody strin
 			processingError = fmt.Errorf("lỗi unmarshal parking_summary event: %w", err)
 		}
 	case "system_status":
-		var event domain.DeviceSystemStatusEvent
-		if err := json.Unmarshal(genericEvent.RawPayload, &event); err == nil {
-			event.GenericIoTEvent = genericEvent
-			processingError = s.parkingService.HandleSystemStatus(ctx, event)
-		} else {
-			processingError = fmt.Errorf("lỗi unmarshal system_status event: %w", err)
-		}
+		//var event domain.DeviceSystemStatusEvent
+		//if err := json.Unmarshal(genericEvent.RawPayload, &event); err == nil {
+		//	event.GenericIoTEvent = genericEvent
+		//	processingError = s.parkingService.HandleSystemStatus(ctx, event)
+		//} else {
+		//	processingError = fmt.Errorf("lỗi unmarshal system_status event: %w", err)
+		//}
 	case "error":
 		var event domain.DeviceErrorEvent
 		if err := json.Unmarshal(genericEvent.RawPayload, &event); err == nil {
@@ -155,17 +154,17 @@ func (s *IoTService) HandleDeviceEvent(ctx context.Context, sqsMessageBody strin
 			processingError = fmt.Errorf("lỗi unmarshal command_ack event: %w", err)
 		}
 	default:
-		if strings.Contains(genericEvent.ReceivedMqttTopic, "/command/acknowledgements") {
-			var event domain.DeviceCommandAckEvent
-			if err := json.Unmarshal(genericEvent.RawPayload, &event); err == nil {
-				event.GenericIoTEvent = genericEvent
-				processingError = s.parkingService.HandleCommandAck(ctx, event)
-			} else {
-				processingError = fmt.Errorf("lỗi unmarshal command_ack (từ topic) event: %w", err)
-			}
-		} else {
-			processingError = fmt.Errorf("loại tin nhắn không xác định: '%s' từ topic '%s'", genericEvent.MessageType, genericEvent.ReceivedMqttTopic)
-		}
+		//if strings.Contains(genericEvent.ReceivedMqttTopic, "smart_parking/command/barriers") {
+		//	//var event domain.DeviceCommandAckEvent
+		//	//if err := json.Unmarshal(genericEvent.RawPayload, &event); err == nil {
+		//	//	event.GenericIoTEvent = genericEvent
+		//	//	processingError = s.parkingService.HandleCommandAck(ctx, event)
+		//	//} else {
+		//	//	processingError = fmt.Errorf("lỗi unmarshal command_ack (từ topic) event: %w", err)
+		//	//}
+		//} else {
+		//	//processingError = fmt.Errorf("loại tin nhắn không xác định: '%s' từ topic '%s'", genericEvent.MessageType, genericEvent.ReceivedMqttTopic)
+		//}
 	}
 
 	if s.eventLogRepo != nil && logEntry.ID != 0 { // Chỉ cập nhật nếu đã tạo log entry thành công

@@ -18,23 +18,13 @@ type GenericIoTEvent struct {
 
 type DeviceStartupInfoEvent struct {
 	GenericIoTEvent
-	FirmwareVersion string `json:"firmware_version"`
-	StartupReason   string `json:"startup_reason"`
-	CompileDate     string `json:"compile_date"`
-	CompileTime     string `json:"compile_time"`
-	ChipID          string `json:"chip_id"`      // ESP.getChipId() trả về uint32_t, ESP32 code nên gửi dạng string
-	FlashSize       uint32 `json:"flash_size"`   // ESP.getFlashChipSize()
-	CPUFreqMHz      uint32 `json:"cpu_freq_mhz"` // ESP.getCpuFreqMHz()
-	WiFi            struct {
-		SSID string `json:"ssid"`
-		RSSI int    `json:"rssi"`
-		IP   string `json:"ip"`
-		MAC  string `json:"mac"`
-	} `json:"wifi"`
-	Config struct {
-		GateSensors  int `json:"gate_sensors"`
-		ParkingSlots int `json:"parking_slots"`
-	} `json:"config"`
+	FirmwareVersion string `json:"firmware"`
+	ID              string `json:"id"`
+	Mac             string `json:"mac"`
+	Ip              string `json:"ip"`
+	Rssi            int    `json:"rssi"`
+	Uptime          int64  `json:"uptime"`       // millis() / 1000
+	StartupTime     string `json:"startup_time"` // ESP.getCpuFreqMHz()
 }
 
 type DeviceBarrierStateEvent struct {
@@ -63,19 +53,9 @@ type DeviceGateSensorEvent struct {
 }
 
 type DeviceParkingSlotEvent struct {
-	GenericIoTEvent                // device_id từ đây là ThingName, message_type là "slot_status"
-	SlotID              string     `json:"slot_id"` // "S1", "S2", "S3", "S4"
-	IsOccupied          bool       `json:"is_occupied"`
-	Status              SlotStatus `json:"status"`     // "occupied" hoặc "available" (ESP32 gửi là "available")
-	ChangedAt           string     `json:"changed_at"` // Timestamp khi trạng thái thay đổi
-	Location            string     `json:"location,omitempty"`
-	Floor               string     `json:"floor,omitempty"`
-	Zone                string     `json:"zone,omitempty"`
-	TotalSlots          int        `json:"total_slots,omitempty"`
-	TotalOccupied       int        `json:"total_occupied,omitempty"`
-	AvailableSlots      int        `json:"available_slots,omitempty"`
-	OccupancyPercentage float64    `json:"occupancy_percentage,omitempty"`
-	IsFull              bool       `json:"is_full,omitempty"`
+	GenericIoTEvent        // device_id từ đây là ThingName, message_type là "slot_status"
+	SlotID          string `json:"slot_id"` // "S1", "S2", "S3", "S4"
+	IsOccupied      bool   `json:"occupied"`
 }
 
 type DeviceParkingSummaryEvent struct {
@@ -84,15 +64,6 @@ type DeviceParkingSummaryEvent struct {
 	OccupiedSlots       int     `json:"occupied_slots"`
 	AvailableSlots      int     `json:"available_slots"`
 	OccupancyPercentage float64 `json:"occupancy_percentage"`
-	IsFull              bool    `json:"is_full"`
-	IsEmpty             bool    `json:"is_empty"`
-	EntryBarrierOpen    bool    `json:"entry_barrier_open"`
-	ExitBarrierOpen     bool    `json:"exit_barrier_open"`
-	Location            string  `json:"location,omitempty"`
-	Slots               []struct {
-		ID       string `json:"id"`
-		Occupied bool   `json:"occupied"`
-	} `json:"slots,omitempty"`
 }
 
 type DeviceSystemStatusEvent struct {

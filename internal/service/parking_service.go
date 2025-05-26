@@ -185,7 +185,12 @@ func (s *ParkingService) DeleteParkingSlot(ctx context.Context, slotID int) erro
 }
 
 func (s *ParkingService) UpdateParkingSlotStatusFromDevice(ctx context.Context, event domain.DeviceParkingSlotEvent) error {
-	log.Printf("Service: Đang cập nhật trạng thái cho slot '%s' (ESP32: '%s') thành '%s'", event.SlotID, event.DeviceID, event.Status)
+	status := domain.StatusOccupied
+
+	if !event.IsOccupied {
+		status = domain.StatusVacant
+	}
+	log.Printf("Service: Đang cập nhật trạng thái cho slot '%s' (ESP32: '%s') thành '%s'", event.SlotID, event.DeviceID, status)
 
 	slot, err := s.slotRepo.FindByThingAndSlotIdentifier(ctx, event.DeviceID, event.SlotID)
 	if err != nil {
@@ -201,24 +206,20 @@ func (s *ParkingService) UpdateParkingSlotStatusFromDevice(ctx context.Context, 
 	}
 
 	// Chuyển đổi timestamp từ string sang time.Time
-	parsedTime, err := time.Parse(time.RFC3339Nano, event.Timestamp)
-	if err != nil {
-		log.Printf("Lỗi parse timestamp '%s' cho slot event: %v. Sử dụng thời gian hiện tại của server.", event.Timestamp, err)
-		parsedTime = time.Now().UTC()
-	}
+	parsedTime := time.Now()
 
 	// Chỉ cập nhật nếu trạng thái thực sự thay đổi HOẶC nếu sự kiện này mới hơn sự kiện đã lưu cuối cùng
 	// Điều này giúp xử lý các message đến không theo thứ tự hoặc message trùng lặp.
-	if slot.Status != event.Status || slot.LastEventTimestamp == nil || (slot.LastEventTimestamp != nil && parsedTime.After(*slot.LastEventTimestamp)) {
-		err = s.slotRepo.UpdateStatus(ctx, slot.ID, event.Status, &parsedTime, "device")
+	if slot.Status != status || slot.LastEventTimestamp == nil || (slot.LastEventTimestamp != nil && parsedTime.After(*slot.LastEventTimestamp)) {
+		err = s.slotRepo.UpdateStatus(ctx, slot.ID, status, &parsedTime, "device")
 		if err != nil {
 			log.Printf("Lỗi khi cập nhật trạng thái slot ID %d: %v", slot.ID, err)
 			return fmt.Errorf("lỗi cập nhật trạng thái slot: %w", err)
 		}
-		log.Printf("Đã cập nhật trạng thái slot ID %d (Identifier: %s, LotID: %d) thành %s", slot.ID, slot.SlotIdentifier, slot.LotID, event.Status)
+		log.Printf("Đã cập nhật trạng thái slot ID %d (Identifier: %s, LotID: %d) thành %s", slot.ID, slot.SlotIdentifier, slot.LotID, status)
 	} else {
 		log.Printf("Trạng thái slot ID %d (Identifier: %s) không thay đổi (%s) hoặc sự kiện cũ hơn (DB: %v, Event: %v). Bỏ qua cập nhật.",
-			slot.ID, slot.SlotIdentifier, event.Status, slot.LastEventTimestamp, parsedTime)
+			slot.ID, slot.SlotIdentifier, status, slot.LastEventTimestamp, parsedTime)
 	}
 	return nil
 }
@@ -520,41 +521,40 @@ func (s *ParkingService) FindParkingSessions(ctx context.Context, filter domain.
 
 // --- Device Monitoring Logic ---
 func (s *ParkingService) HandleDeviceStartup(ctx context.Context, event domain.DeviceStartupInfoEvent) error {
-	log.Printf("Service: Xử lý thông tin khởi động từ thiết bị '%s', Firmware: %s, Lý do khởi động: %s",
-		event.DeviceID, event.FirmwareVersion, event.StartupReason)
+	log.Printf("Service: Xử lý thông tin khởi động từ thiết bị '%s', Firmware: %s", event.ClientIDFromIoT, event.FirmwareVersion)
 
-	now := time.Now().UTC()
-	var rssiVal null.Int
-	if event.WiFi.RSSI != 0 { // Kiểm tra giá trị mặc định của int
-		rssiVal = null.IntFrom(int64(event.WiFi.RSSI))
-	}
+	//now := time.Now().UTC()
+	//var rssiVal null.Int
+	//if event.Rssi != 0 { // Kiểm tra giá trị mặc định của int
+	//	rssiVal = null.IntFrom(int64(event.Rssi))
+	//}
 
-	device := &domain.Device{
-		ThingName:       event.DeviceID,
-		FirmwareVersion: event.FirmwareVersion,
-		LastSeenAt:      null.TimeFrom(now),
-		Status:          domain.DeviceOnline,
-		IPAddress:       event.WiFi.IP,
-		MacAddress:      event.WiFi.MAC,
-		LastRssi:        rssiVal,
-		// LotID: Cần logic để xác định LotID nếu ESP32 này quản lý một bãi cụ thể
-	}
-	_, err := s.deviceRepo.CreateOrUpdate(ctx, device)
-	if err != nil {
-		log.Printf("Lỗi khi cập nhật/tạo thông tin thiết bị '%s': %v", event.DeviceID, err)
-		return err
-	}
-	log.Printf("Đã cập nhật trạng thái khởi động cho thiết bị '%s'", event.DeviceID)
+	//device := &domain.Device{
+	//	ThingName:       event.ClientIDFromIoT,
+	//	FirmwareVersion: event.FirmwareVersion,
+	//	LastSeenAt:      null.TimeFrom(now),
+	//	Status:          domain.DeviceOnline,
+	//	IPAddress:       event.Ip,
+	//	MacAddress:      event.Mac,
+	//	LastRssi:        rssiVal,
+	//	// LotID: Cần logic để xác định LotID nếu ESP32 này quản lý một bãi cụ thể
+	//}
+	//_, err := s.deviceRepo.CreateOrUpdate(ctx, device)
+	//if err != nil {
+	//	log.Printf("Lỗi khi cập nhật/tạo thông tin thiết bị '%s': %v", event.ClientIDFromIoT, err)
+	//	return err
+	//}
+	log.Printf("Đã cập nhật trạng thái khởi động cho thiết bị '%s'", event.ClientIDFromIoT)
 	return nil
 }
 
 func (s *ParkingService) HandleParkingSummary(ctx context.Context, event domain.DeviceParkingSummaryEvent) error {
-	log.Printf("Service: Xử lý thông tin tóm tắt bãi đỗ từ thiết bị '%s': %d/%d chỗ có xe. Rào vào: %t, Rào ra: %t",
-		event.DeviceID, event.OccupiedSlots, event.TotalSlots, event.EntryBarrierOpen, event.ExitBarrierOpen)
+	log.Printf("Service: Xử lý thông tin tóm tắt bãi đỗ từ thiết bị '%s': %d/%d chỗ có xe",
+		event.DeviceID, event.OccupiedSlots, event.TotalSlots)
 	// TODO: Logic nghiệp vụ
 	// - So sánh với trạng thái hiện tại trong DB để phát hiện bất đồng bộ (nếu có).
 	// - Cập nhật last_seen_at cho thiết bị.
-	s.deviceRepo.UpdateStatus(ctx, event.DeviceID, domain.DeviceOnline, time.Now().UTC())
+	s.deviceRepo.UpdateStatus(ctx, event.ClientIDFromIoT, domain.DeviceOnline, time.Now().UTC())
 	return nil
 }
 
