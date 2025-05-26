@@ -13,7 +13,7 @@ import (
 	// "parking_system_go/internal/repository"
 )
 
-func SetupRouter(as *service.AuthService, ps *service.ParkingService, is *service.IoTService, authMw *middleware.AuthMiddleware, lprService *service.LPRService) *gin.Engine {
+func SetupRouter(as *service.AuthService, ps *service.ParkingService, is *service.IoTService, authMw *middleware.AuthMiddleware, lprService *service.LPRService, iotServiceUpdated *service.IoTService) *gin.Engine {
 	r := gin.Default()
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
@@ -115,6 +115,15 @@ func SetupRouter(as *service.AuthService, ps *service.ParkingService, is *servic
 			{
 				lprRoutes.POST("/process-image", lprH.ProcessImage)
 			}
+		}
+
+		gateEventHandler := handler.NewGateEventHandler(iotServiceUpdated, lprService, ps)
+		gateRoutes := v1.Group("/gate-events")
+		gateRoutes.Use(authMw.AuthorizeRole("admin", "operator"))
+		{
+			gateRoutes.POST("/lpr-trigger", gateEventHandler.TriggerLPR)
+			gateRoutes.POST("/create-session", gateEventHandler.CreateSessionFromEvent)
+			gateRoutes.GET("/pending", gateEventHandler.GetPendingGateEvents)
 		}
 	}
 	return r

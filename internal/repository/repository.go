@@ -74,3 +74,14 @@ type DeviceRepository interface {
 	UpdateStatus(ctx context.Context, thingName string, status domain.DeviceStatus, lastSeenAt time.Time) error
 	UpdateDetails(ctx context.Context, device *domain.Device) (*domain.Device, error)
 }
+
+type GateEventRepository interface {
+	Create(ctx context.Context, event *domain.GateEventRecord) error
+	FindByEventID(ctx context.Context, eventID string) (*domain.GateEventRecord, error)
+	UpdateStatus(ctx context.Context, eventID string, status domain.GateEventStatus, notes string) error
+	UpdateLPRResult(ctx context.Context, eventID string, plate string, confidence float32) error
+	UpdateWithSession(ctx context.Context, eventID string, sessionID int) error
+	FindPendingEvents(ctx context.Context, limit int) ([]domain.GateEventRecord, error)
+	FindExpiredEvents(ctx context.Context) ([]domain.GateEventRecord, error)
+	CleanupExpiredEvents(ctx context.Context) (int, error)
+}

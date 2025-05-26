@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iotdataplane"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"smart_parking/internal/api/handler"
 	"smart_parking/internal/api/middleware"
 
 	"log"
@@ -72,12 +73,18 @@ func main() {
 	deviceEventsLogRepo := postgresql.NewPgDeviceEventsLogRepository(db)
 	sessionRepo := postgresql.NewPgParkingSessionRepository(db)
 	deviceRepo := postgresql.NewPgDeviceRepository(db)
+	gateEventRepo := postgresql.NewPgGateEventRepository(db) // Thêm GateEvent Repository
+
+	// init websocket manager
+	webSocketManager := handler.NewWebSocketManager() // Giả sử bạn có một WebSocketManager interface
 
 	// 6. Initialize Services
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpirationHours) // Thêm AuthService
 	parkingService := service.NewParkingService(parkingLotRepo, parkingSlotRepo, barrierRepo,
 		sessionRepo, deviceRepo, deviceEventsLogRepo)
 	iotService := service.NewIoTService(parkingService, iotDataPlaneClient, cfg, deviceEventsLogRepo)
+	iotServiceUpdated := service.NewIoTServiceUpdated(parkingService, iotDataPlaneClient,
+		cfg, deviceEventsLogRepo, gateEventRepo, webSocketManager)
 
 	// 7. Initialize Auth Middleware
 	authMiddleware := middleware.NewAuthMiddleware(authService) // Khởi tạo Auth Middleware
@@ -100,7 +107,7 @@ func main() {
 	}
 
 	// 9. Setup HTTP Router
-	router := api.SetupRouter(authService, parkingService, iotService, authMiddleware, lprService) // Truyền authService và authMiddleware
+	router := api.SetupRouter(authService, parkingService, iotService, authMiddleware, lprService, iotServiceUpdated) // Truyền authService và authMiddleware
 
 	// 10. Start HTTP Server
 	srv := &http.Server{
