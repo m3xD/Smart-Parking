@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"smart_parking/internal/api/handler"
 	"smart_parking/internal/api/middleware"
+	"smart_parking/internal/repository"
 
 	"log"
 	"net/http"
@@ -77,6 +78,8 @@ func main() {
 
 	// init websocket manager
 	webSocketManager := handler.NewWebSocketManager() // Giả sử bạn có một WebSocketManager interface
+	go webSocketManager.Start()
+	log.Println("WebSocket Manager đã được khởi động.")
 
 	// 6. Initialize Services
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret, cfg.JWTExpirationHours) // Thêm AuthService
@@ -96,7 +99,7 @@ func main() {
 	if cfg.SQSEventQueueURL == "" {
 		log.Println("CẢNH BÁO: SQS_EVENT_QUEUE_URL chưa được cấu hình. SQS Consumer sẽ không chạy.")
 	} else {
-		sqsConsumer := iot.NewSQSConsumer(sqsClient, cfg, iotService)
+		sqsConsumer := iot.NewSQSConsumer(sqsClient, cfg, iotServiceUpdated)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -106,8 +109,11 @@ func main() {
 		}()
 	}
 
+	// start background job để cleanup gate events
+	go startGateEventCleanupJob(gateEventRepo)
+
 	// 9. Setup HTTP Router
-	router := api.SetupRouter(authService, parkingService, iotService, authMiddleware, lprService, iotServiceUpdated) // Truyền authService và authMiddleware
+	router := api.SetupRouter(authService, parkingService, iotService, authMiddleware, lprService, iotServiceUpdated, webSocketManager) // Truyền authService và authMiddleware
 
 	// 10. Start HTTP Server
 	srv := &http.Server{
@@ -153,4 +159,20 @@ func main() {
 	}
 
 	log.Println("Server đã tắt.")
+}
+
+func startGateEventCleanupJob(gateEventRepo repository.GateEventRepository) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		count, err := gateEventRepo.CleanupExpiredEvents(ctx)
+		if err != nil {
+			log.Printf("Lỗi cleanup expired gate events: %v", err)
+		} else if count > 0 {
+			log.Printf("Đã cleanup %d expired gate events", count)
+		}
+		cancel()
+	}
 }

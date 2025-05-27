@@ -18,13 +18,17 @@ type GenericIoTEvent struct {
 
 type DeviceStartupInfoEvent struct {
 	GenericIoTEvent
-	FirmwareVersion string `json:"firmware"`
-	ID              string `json:"id"`
-	Mac             string `json:"mac"`
-	Ip              string `json:"ip"`
-	Rssi            int    `json:"rssi"`
-	Uptime          int64  `json:"uptime"`       // millis() / 1000
-	StartupTime     string `json:"startup_time"` // ESP.getCpuFreqMHz()
+	FirmwareVersion string `json:"firmware_version"`
+	StartupReason   string `json:"startup_reason"` // "power_on", "reset", "watchdog", ...
+	ChipID          string `json:"chip_id"`
+	FlashSize       int    `json:"flash_size"`   // Kích thước flash, ví dụ: 4096 (4MB)
+	CPUFreqMHz      int    `json:"cpu_freq_mhz"` // Tần số CPU, ví dụ: 240
+	Wifi            struct {
+		SSID string `json:"ssid"`
+		RSSI int    `json:"rssi"` // Cường độ tín hiệu WiFi, ví dụ: -70
+		IP   string `json:"ip"`   // Địa chỉ IP của ESP32 trên mạng WiFi
+		MAC  string `json:"mac"`  // Địa chỉ MAC của ESP32
+	} `json:"wifi"` // Thông tin WiFi, có thể chứa SSID, RSSI, IP, MAC
 }
 
 type DeviceBarrierStateEvent struct {

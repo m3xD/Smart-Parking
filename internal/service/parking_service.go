@@ -523,27 +523,27 @@ func (s *ParkingService) FindParkingSessions(ctx context.Context, filter domain.
 func (s *ParkingService) HandleDeviceStartup(ctx context.Context, event domain.DeviceStartupInfoEvent) error {
 	log.Printf("Service: Xử lý thông tin khởi động từ thiết bị '%s', Firmware: %s", event.ClientIDFromIoT, event.FirmwareVersion)
 
-	//now := time.Now().UTC()
-	//var rssiVal null.Int
-	//if event.Rssi != 0 { // Kiểm tra giá trị mặc định của int
-	//	rssiVal = null.IntFrom(int64(event.Rssi))
-	//}
+	now := time.Now().UTC()
+	var rssiVal null.Int
+	if event.Wifi.RSSI != 0 { // Kiểm tra giá trị mặc định của int
+		rssiVal = null.IntFrom(int64(event.Wifi.RSSI))
+	}
 
-	//device := &domain.Device{
-	//	ThingName:       event.ClientIDFromIoT,
-	//	FirmwareVersion: event.FirmwareVersion,
-	//	LastSeenAt:      null.TimeFrom(now),
-	//	Status:          domain.DeviceOnline,
-	//	IPAddress:       event.Ip,
-	//	MacAddress:      event.Mac,
-	//	LastRssi:        rssiVal,
-	//	// LotID: Cần logic để xác định LotID nếu ESP32 này quản lý một bãi cụ thể
-	//}
-	//_, err := s.deviceRepo.CreateOrUpdate(ctx, device)
-	//if err != nil {
-	//	log.Printf("Lỗi khi cập nhật/tạo thông tin thiết bị '%s': %v", event.ClientIDFromIoT, err)
-	//	return err
-	//}
+	device := &domain.Device{
+		ThingName:       event.DeviceID,
+		FirmwareVersion: event.FirmwareVersion,
+		LastSeenAt:      null.TimeFrom(now),
+		Status:          domain.DeviceOnline,
+		IPAddress:       event.Wifi.IP,
+		MacAddress:      event.Wifi.MAC,
+		LastRssi:        rssiVal,
+		// LotID: Cần logic để xác định LotID nếu ESP32 này quản lý một bãi cụ thể
+	}
+	_, err := s.deviceRepo.CreateOrUpdate(ctx, device)
+	if err != nil {
+		log.Printf("Lỗi khi cập nhật/tạo thông tin thiết bị '%s': %v", event.ClientIDFromIoT, err)
+		return err
+	}
 	log.Printf("Đã cập nhật trạng thái khởi động cho thiết bị '%s'", event.ClientIDFromIoT)
 	return nil
 }
@@ -554,7 +554,7 @@ func (s *ParkingService) HandleParkingSummary(ctx context.Context, event domain.
 	// TODO: Logic nghiệp vụ
 	// - So sánh với trạng thái hiện tại trong DB để phát hiện bất đồng bộ (nếu có).
 	// - Cập nhật last_seen_at cho thiết bị.
-	s.deviceRepo.UpdateStatus(ctx, event.ClientIDFromIoT, domain.DeviceOnline, time.Now().UTC())
+	// s.deviceRepo.UpdateStatus(ctx, event.DeviceID, domain.DeviceOnline, time.Now().UTC())
 	return nil
 }
 
@@ -618,7 +618,7 @@ func (s *ParkingService) HandleCommandAck(ctx context.Context, event domain.Devi
 		event.DeviceID, event.ReceivedAction, event.RequestID, event.Status)
 	// TODO: Logic nghiệp vụ
 	// - Cập nhật trạng thái của một lệnh đã gửi trước đó trong bảng command_log (nếu có).
-	s.deviceRepo.UpdateStatus(ctx, event.DeviceID, domain.DeviceOnline, time.Now().UTC()) // Thiết bị online vì đã gửi ack
+	// s.deviceRepo.UpdateStatus(ctx, event.DeviceID, domain.DeviceOnline, time.Now().UTC()) // Thiết bị online vì đã gửi ack
 	return nil
 }
 

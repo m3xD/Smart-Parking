@@ -116,15 +116,14 @@ func (s *IoTService) HandleDeviceEvent(ctx context.Context, sqsMessageBody strin
 
 	switch genericEvent.MessageType {
 	case "startup":
-		// Handle device startup events
-		//var event domain.DeviceStartupInfoEvent
-		//if err := json.Unmarshal(genericEvent.RawPayload, &event); err == nil {
-		//	event.GenericIoTEvent = genericEvent
-		//	processingError = s.parkingService.HandleDeviceStartup(ctx, event)
-		//} else {
-		//	processingError = fmt.Errorf("lỗi unmarshal startup event: %w", err)
-		//}
-
+		//Handle device startup events
+		var event domain.DeviceStartupInfoEvent
+		if err := json.Unmarshal(genericEvent.RawPayload, &event); err == nil {
+			event.GenericIoTEvent = genericEvent
+			processingError = s.parkingService.HandleDeviceStartup(ctx, event)
+		} else {
+			processingError = fmt.Errorf("lỗi unmarshal startup event: %w", err)
+		}
 	case "barrier_state":
 		var event domain.DeviceBarrierStateEvent
 		if err := json.Unmarshal(genericEvent.RawPayload, &event); err == nil {
@@ -163,14 +162,13 @@ func (s *IoTService) HandleDeviceEvent(ctx context.Context, sqsMessageBody strin
 		}
 
 	case "system_status":
-		//var event domain.DeviceSystemStatusEvent
-		//if err := json.Unmarshal(genericEvent.RawPayload, &event); err == nil {
-		//	event.GenericIoTEvent = genericEvent
-		//	processingError = s.parkingService.HandleSystemStatus(ctx, event)
-		//} else {
-		//	processingError = fmt.Errorf("lỗi unmarshal system_status event: %w", err)
-		//}
-
+		var event domain.DeviceSystemStatusEvent
+		if err := json.Unmarshal(genericEvent.RawPayload, &event); err == nil {
+			event.GenericIoTEvent = genericEvent
+			processingError = s.parkingService.HandleSystemStatus(ctx, event)
+		} else {
+			processingError = fmt.Errorf("lỗi unmarshal system_status event: %w", err)
+		}
 	case "error":
 		var event domain.DeviceErrorEvent
 		if err := json.Unmarshal(genericEvent.RawPayload, &event); err == nil {
